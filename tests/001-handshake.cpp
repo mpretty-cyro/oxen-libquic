@@ -104,6 +104,14 @@ namespace oxen::quic::test
             CHECK_FALSE(public_ipv6.is_any_port());
             CHECK(public_ipv6.is_addressable());
             CHECK_FALSE(public_ipv6.is_loopback());
+
+            CHECK(Address{"127.0.0.1", 2} < Address{"127.0.0.1", 256});
+            CHECK(Address{"127.0.0.1", 256} < Address{"127.0.0.2", 2});
+            CHECK(Address{"127.0.0.1", 256} < public_ipv6);
+            CHECK(Address{"127.0.0.1", 2} == Address{"127.0.0.1", 2});
+            CHECK(Address{"127.0.0.1", 256} > Address{"127.0.0.1", 2});
+            CHECK(Address{"127.0.0.1", 256} <= public_ipv6);
+            CHECK(public_ipv6 >= Address{"127.0.0.1", 256});
         }
 
         SECTION("IP Address Ranges", "[range][operators][ipaddr]")

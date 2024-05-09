@@ -1,5 +1,9 @@
 #pragma once
 
+#include <oxenc/endian.h>
+
+#include <compare>
+
 #include "formattable.hpp"
 #include "ip.hpp"
 #include "utils.hpp"
@@ -232,52 +236,28 @@ namespace oxen::quic
             return &_addr;
         }
 
-        bool operator==(const Address& other) const
+        auto operator<=>(const Address& other) const
         {
             if (is_ipv4() && other.is_ipv4())
             {
                 auto& a = in4();
                 auto& b = other.in4();
-                return a.sin_port == b.sin_port &&
-                       memcmp(&a.sin_addr.s_addr, &b.sin_addr.s_addr, sizeof(a.sin_addr.s_addr)) == 0;
+                if (auto r = memcmp(&a.sin_addr.s_addr, &b.sin_addr.s_addr, sizeof(a.sin_addr.s_addr)); r != 0)
+                    return r <=> 0;
+                return oxenc::big_to_host(a.sin_port) <=> oxenc::big_to_host(b.sin_port);
             }
             if (is_ipv6() && other.is_ipv6())
             {
                 auto& a = in6();
                 auto& b = other.in6();
-                return a.sin6_port == b.sin6_port &&
-                       memcmp(a.sin6_addr.s6_addr, b.sin6_addr.s6_addr, sizeof(a.sin6_addr.s6_addr)) == 0;
+                if (auto r = memcmp(a.sin6_addr.s6_addr, b.sin6_addr.s6_addr, sizeof(a.sin6_addr.s6_addr)); r != 0)
+                    return r <=> 0;
+                return oxenc::big_to_host(a.sin6_port) <=> oxenc::big_to_host(b.sin6_port);
             }
-            return false;
+            return is_ipv6() <=> other.is_ipv6();
         }
 
-        bool operator<(const Address& other) const
-        {
-            if (is_ipv4() && other.is_ipv4())
-            {
-                auto& a = in4();
-                auto& b = other.in4();
-
-                if (auto r = memcmp(&a.sin_addr.s_addr, &b.sin_addr.s_addr, sizeof(a.sin_addr.s_addr)); r == 0)
-                    return a.sin_port < b.sin_port;
-                else
-                    return (r < 0);
-            }
-            if (is_ipv6() && other.is_ipv6())
-            {
-                auto& a = in6();
-                auto& b = other.in6();
-
-                if (auto r = memcmp(a.sin6_addr.s6_addr, b.sin6_addr.s6_addr, sizeof(a.sin6_addr.s6_addr)); r == 0)
-                    return a.sin6_port < b.sin6_port;
-                else
-                    return (r < 0);
-            }
-            if (is_ipv6() && other.is_ipv4())
-                return false;
-            return true;
-        }
-
+        bool operator==(const Address& other) const { return (*this <=> other) == 0; }
         bool operator!=(const Address& other) const { return !(*this == other); }
 
         // Returns the size of the sockaddr
