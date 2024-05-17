@@ -1,47 +1,28 @@
 #include "ip.hpp"
 
+#include <bit>
+
 #include "internal.hpp"
 
 namespace oxen::quic
 {
-    ipv4::ipv4(const std::string& ip)
-    {
-        if (ip.empty() || ip.find(':') != std::string::npos)
-            throw std::invalid_argument{"Cannot parse invalid ipv4 address!"};
-
-        auto rv = inet_pton(AF_INET, ip.c_str(), &addr);
-
-        if (rv < 0)
-            throw std::invalid_argument{"System error (ec:{}): {}"_format(errno, std::system_category().message(errno))};
-
-        if (rv == 0)
-            throw std::invalid_argument{"IPv4 constructor failed to parse input: {}"_format(ip)};
-    }
-
     const std::string ipv4::to_string() const
     {
+        uint32_t net = oxenc::load_host_to_big<uint32_t>(&addr);
         char buf[INET_ADDRSTRLEN] = {};
-        inet_ntop(AF_INET, &addr, buf, sizeof(buf));
+        inet_ntop(AF_INET, &net, buf, sizeof(buf));
 
         return "{}"_format(buf);
     }
 
-    ipv6::ipv6(const std::string& ip)
+    ipv4 ipv4_net::max_ip()
     {
-        if (ip.empty())
-            throw std::invalid_argument{"Cannot parse invalid ipv6 address!"};
+        auto b = base.to_base(mask);
 
-        std::array<uint64_t, 2> buf{};
-        auto rv = inet_pton(AF_INET6, ip.c_str(), &buf);
+        if (mask < 32)
+            b.addr |= (1 << (32 - mask)) - 1;
 
-        hi = oxenc::big_to_host<uint64_t>(buf[0]);
-        lo = oxenc::big_to_host<uint64_t>(buf[1]);
-
-        if (rv < 0)
-            throw std::invalid_argument{"System error (ec:{}): {}"_format(errno, std::system_category().message(errno))};
-
-        if (rv == 0)
-            throw std::invalid_argument{"IPv4 constructor failed to parse input: {}"_format(ip)};
+        return b;
     }
 
     in6_addr ipv6::to_in6() const
@@ -65,6 +46,24 @@ namespace oxen::quic
         inet_ntop(AF_INET6, &addr, buf, sizeof(buf));
 
         return "{}"_format(buf);
+    }
+
+    ipv6 ipv6_net::max_ip()
+    {
+        auto b = base.to_base(mask);
+
+        if (mask > 64)
+        {
+            b.hi = base.hi;
+            b.lo |= (1 << (128 - mask)) - 1;
+        }
+        else
+        {
+            b.hi |= (1 << (64 - mask)) - 1;
+            b.lo = ~uint64_t{0};
+        }
+
+        return b;
     }
 
 }  //  namespace oxen::quic

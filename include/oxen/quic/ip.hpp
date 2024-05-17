@@ -7,14 +7,15 @@
 
 namespace oxen::quic
 {
+    inline constexpr size_t IPV4_ARRLEN{4};
+    inline constexpr size_t IPV6_ARRLEN{16};
+
     struct ipv4
     {
-        // Stored in network order
+        // host order
         uint32_t addr;
 
         ipv4() = default;
-        // Constructor using host order IP address string
-        ipv4(const std::string& ip);
 
         constexpr ipv4(uint32_t a) : addr{a} {}
         constexpr ipv4(uint8_t a, uint8_t b, uint8_t c, uint8_t d) :
@@ -26,17 +27,15 @@ namespace oxen::quic
         explicit operator in_addr() const
         {
             in_addr a;
-            a.s_addr = addr;
+            a.s_addr = oxenc::load_host_to_big<uint32_t>(&addr);
             return a;
         }
 
-        constexpr bool operator==(const ipv4& a) const { return addr == a.addr; }
+        constexpr auto operator<=>(const ipv4& a) const { return addr <=> a.addr; }
 
-        constexpr bool operator==(const in_addr& a) const { return addr == a.s_addr; }
+        constexpr bool operator==(const ipv4& a) const { return (addr <=> a.addr) == 0; }
 
-        constexpr bool operator!=(const ipv4& a) const { return not(*this == a); }
-
-        constexpr bool operator<(const ipv4& a) const { return addr < a.addr; }
+        constexpr bool operator==(const in_addr& a) const { return (addr <=> a.s_addr) == 0; }
 
         constexpr ipv4 to_base(uint8_t mask) const { return mask < 32 ? ipv4{(addr >> (32 - mask)) << (32 - mask)} : *this; }
     };
@@ -46,13 +45,15 @@ namespace oxen::quic
         ipv4 base;
         uint8_t mask;
 
+        ipv4 max_ip();
+
+        constexpr ipv4_net(ipv4 b, uint8_t m) : base{b.to_base(m)}, mask{m} {}
+
         const std::string to_string() const { return base.to_base(mask).to_string(); }
 
-        constexpr bool operator==(const ipv4_net& a) const { return base == a.base && mask == a.mask; }
+        constexpr auto operator<=>(const ipv4_net& a) const { return std::tie(base, mask) <=> std::tie(a.base, a.mask); }
 
-        constexpr bool operator!=(const ipv4_net& a) const { return not(*this == a); }
-
-        constexpr bool operator<(const ipv4_net& a) const { return base.to_base(mask) < a.base.to_base(a.mask); }
+        constexpr bool operator==(const ipv4_net& a) const { return std::tie(base, mask) == std::tie(a.base, a.mask); }
 
         constexpr bool contains(const ipv4& addr) const { return addr.to_base(mask) == base; }
     };
@@ -72,17 +73,17 @@ namespace oxen::quic
         {}
 
       public:
-        // Network order
+        // Host order
         uint64_t hi, lo;
 
-        // Host order string constructor
-        ipv6(const std::string& ip);
+        ipv6() = default;
 
-        // Network order in6_addr constructor
+        // Network order in6_addr constructor (calls private constructor)
         ipv6(const struct in6_addr* addr) : ipv6{addr->s6_addr} {}
 
-        constexpr ipv6(
-                uint16_t a = 0x0000,
+        // Explicit to prevent collision with default constructor and make calling purposeful
+        explicit constexpr ipv6(
+                uint16_t a,
                 uint16_t b = 0x0000,
                 uint16_t c = 0x0000,
                 uint16_t d = 0x0000,
@@ -98,11 +99,9 @@ namespace oxen::quic
 
         const std::string to_string() const;
 
-        constexpr bool operator==(const ipv6& a) const { return hi == a.hi && lo == a.lo; }
+        constexpr auto operator<=>(const ipv6& a) const { return std::tie(hi, lo) <=> std::tie(a.hi, a.lo); }
 
-        constexpr bool operator!=(const ipv6& a) const { return not(*this == a); }
-
-        constexpr bool operator<(const ipv6& a) const { return std::tie(hi, lo) < std::tie(a.hi, a.lo); }
+        constexpr bool operator==(const ipv6& a) const { return (*this <=> a) == 0; }
 
         constexpr ipv6 to_base(uint8_t mask) const
         {
@@ -126,18 +125,20 @@ namespace oxen::quic
         ipv6 base;
         uint8_t mask;
 
+        ipv6 max_ip();
+
+        constexpr ipv6_net(ipv6 b, uint8_t m) : base{b.to_base(m)}, mask{m} {}
+
         const std::string to_string() const { return base.to_base(mask).to_string(); }
 
+        constexpr auto operator<=>(const ipv6_net& a) { return std::tie(base, mask) <=> std::tie(a.base, a.mask); }
+
         constexpr bool operator==(const ipv6_net& a) { return base == a.base && mask == a.mask; }
-
-        constexpr bool operator!=(const ipv6_net& a) { return not(*this == a); }
-
-        constexpr bool operator<(const ipv6_net& a) { return base.to_base(mask) < a.base.to_base(a.mask); }
 
         constexpr bool contains(const ipv6& addr) const { return addr.to_base(mask) == base; }
     };
 
-    inline constexpr ipv6_net operator/(const ipv6 a, uint8_t mask)
+    inline constexpr ipv6_net operator/(const ipv6& a, uint8_t mask)
     {
         return {a.to_base(mask), mask};
     }

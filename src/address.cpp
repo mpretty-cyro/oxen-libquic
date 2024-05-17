@@ -68,27 +68,27 @@ namespace oxen::quic
             throw std::invalid_argument{"What on earth did you pass to this constructor?"};
     }
 
-    Address::Address(ipv4 v4, uint16_t port)
+    Address::Address(const ipv4& v4, uint16_t port)
     {
         _sock_addr.ss_family = AF_INET;
 
         auto& sin = reinterpret_cast<sockaddr_in&>(_sock_addr);
         sin.sin_port = oxenc::host_to_big(port);
-        std::memcpy(&sin.sin_addr, &v4, sizeof(ipv4));
+        oxenc::write_host_as_big<uint32_t>(v4.addr, &sin.sin_addr);
 
         update_socklen(sizeof(sockaddr_in));
     }
 
-    Address::Address(ipv6 v6, uint16_t port)
+    Address::Address(const ipv6& v6, uint16_t port)
     {
         _sock_addr.ss_family = AF_INET6;
 
         auto& sin6 = reinterpret_cast<sockaddr_in6&>(_sock_addr);
         sin6.sin6_port = oxenc::host_to_big(port);
 
-        // std::array<uint64_t, 2> arr{v6.hi, v6.lo};
-        std::array<uint64_t, 2> arr{oxenc::big_to_host<uint64_t>(v6.hi), oxenc::big_to_host<uint64_t>(v6.lo)};
-        std::memcpy(&sin6.sin6_addr.s6_addr, &arr, sizeof(arr));
+        auto in6 = v6.to_in6();
+
+        std::memcpy(&sin6.sin6_addr.s6_addr, &in6, sizeof(struct in6_addr));
 
         update_socklen(sizeof(sockaddr_in6));
     }
@@ -118,6 +118,7 @@ namespace oxen::quic
             std::memset(&sin6, 0, sizeof(sockaddr_in6));
             sin6.sin6_family = AF_INET6;
             sin6.sin6_port = p;
+            update_socklen(sizeof(sockaddr_in6));
         }
         std::memcpy(&reinterpret_cast<sockaddr_in6&>(_sock_addr).sin6_addr, addr, sizeof(struct in6_addr));
     }
@@ -202,7 +203,7 @@ namespace oxen::quic
 
     ipv4 Address::to_ipv4() const
     {
-        return {in4().sin_addr.s_addr};
+        return {oxenc::big_to_host(in4().sin_addr.s_addr)};
     }
 
     ipv6 Address::to_ipv6() const
