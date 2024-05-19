@@ -74,7 +74,7 @@ namespace oxen::quic
 
         auto& sin = reinterpret_cast<sockaddr_in&>(_sock_addr);
         sin.sin_port = oxenc::host_to_big(port);
-        oxenc::write_host_as_big<uint32_t>(v4.addr, &sin.sin_addr);
+        sin.sin_addr.s_addr = oxenc::host_to_big(v4.addr);
 
         update_socklen(sizeof(sockaddr_in));
     }
@@ -88,7 +88,7 @@ namespace oxen::quic
 
         auto in6 = v6.to_in6();
 
-        std::memcpy(&sin6.sin6_addr.s6_addr, &in6, sizeof(struct in6_addr));
+        std::memcpy(&sin6.sin6_addr, &in6, sizeof(struct in6_addr));
 
         update_socklen(sizeof(sockaddr_in6));
     }
