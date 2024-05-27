@@ -246,6 +246,7 @@ namespace oxen::quic
                     return r <=> 0;
                 return oxenc::big_to_host(a.sin_port) <=> oxenc::big_to_host(b.sin_port);
             }
+
             if (is_ipv6() && other.is_ipv6())
             {
                 auto& a = in6();
@@ -258,7 +259,6 @@ namespace oxen::quic
         }
 
         bool operator==(const Address& other) const { return (*this <=> other) == 0; }
-        bool operator!=(const Address& other) const { return !(*this == other); }
 
         // Returns the size of the sockaddr
         socklen_t socklen() const { return _addr.addrlen; }
@@ -340,6 +340,8 @@ namespace oxen::quic
             return *this;
         }
 
+        bool operator==(const Path& other) const { return std::tie(local, remote) == std::tie(other.local, other.remote); }
+
         // template code to pass Path as ngtcp2_path into ngtcp2 functions
         template <typename T>
             requires std::same_as<T, ngtcp2_path>
@@ -387,6 +389,17 @@ namespace std
 
             auto h = hash<string_view>{}(addr_data);
             h ^= hash<decltype(port)>{}(port) + inverse_golden_ratio + (h << 6) + (h >> 2);
+            return h;
+        }
+    };
+
+    template <>
+    struct hash<oxen::quic::Path>
+    {
+        size_t operator()(const oxen::quic::Path& addr) const
+        {
+            auto h = hash<oxen::quic::Address>{}(addr.local);
+            h ^= hash<oxen::quic::Address>{}(addr.remote) + inverse_golden_ratio + (h << 6) + (h >> 2);
             return h;
         }
     };
