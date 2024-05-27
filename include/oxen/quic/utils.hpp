@@ -202,6 +202,12 @@ namespace oxen::quic
 
     std::string str_tolower(std::string s);
 
+    template <std::integral T>
+    constexpr bool increment_will_overflow(T val)
+    {
+        return std::numeric_limits<T>::max() == val;
+    }
+
     /// Parses an integer of some sort from a string, requiring that the entire string be consumed
     /// during parsing.  Return false if parsing failed, sets `value` and returns true if the entire
     /// string was consumed.

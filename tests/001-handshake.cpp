@@ -124,55 +124,120 @@ namespace oxen::quic::test
             CHECK_FALSE((ipv4(10, 0, 0, 0) / 8).contains(ipv4(11, 0, 0, 0)));
             CHECK_FALSE((ipv4(10, 0, 0, 0) / 8).contains(ipv4(9, 255, 255, 255)));
 
-            CHECK((ipv6(0x2001, 0xdb8) / 32).contains(ipv6(0x2001, 0xdb8)));
-            CHECK((ipv6(0x2001, 0xdb8) / 32).contains(ipv6(0x2001, 0xdb8, 0xffff, 0xffff)));
-            CHECK((ipv6(0x2001, 0xdb8, 0xffff) / 32).contains(ipv6(0x2001, 0xdb8)));
-            CHECK((ipv6(0x2001, 0xdb8, 0xffff) / 32).contains(ipv6(0x2001, 0xdb8)));
+            CHECK((ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0) / 32).contains(ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0)));
+            CHECK((ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0) / 32).contains(ipv6(0x2001, 0xdb8, 0xffff, 0xffff, 0, 0, 0, 0)));
+            CHECK((ipv6(0x2001, 0xdb8, 0xffff, 0, 0, 0, 0, 0) / 32).contains(ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0)));
+            CHECK((ipv6(0x2001, 0xdb8, 0xffff, 0, 0, 0, 0, 0) / 32).contains(ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0)));
+
+            auto v4_base = ipv4(10, 0, 0, 0);
+            auto v4_net = v4_base / 8;
+            auto v4_netmax = v4_net.max_ip();
+
+            auto v4_next = *v4_base.next_ip();
+            auto v4_maxplus = *v4_netmax.next_ip();
+
+            CHECK(v4_base.to_string() == "10.0.0.0"s);
+            CHECK(v4_next.to_string() == "10.0.0.1"s);
+            CHECK(v4_netmax.to_string() == "10.255.255.255"s);
+            CHECK(v4_maxplus.to_string() == "11.0.0.0"s);
+
+            // overflow
+            CHECK(not ipv4(255, 255, 255, 255).next_ip().has_value());
+
+            // construct to Address type
+            auto v4_max_addr = Address{v4_netmax};
+            CHECK(v4_max_addr.to_string() == "10.255.255.255:0"s);
+
+            constexpr auto max_u64t = std::numeric_limits<uint64_t>::max();
+            constexpr auto max_u16t = std::numeric_limits<uint16_t>::max();
+
+            // ipv6 type; increment ipv6::lo
+            auto a_v6_base = ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0);
+            auto a_v6_net = a_v6_base / 32;
+            auto a_v6_netmax = a_v6_net.max_ip();
+
+            auto a_v6_next = *a_v6_base.next_ip();
+            auto a_v6_maxplus = *a_v6_netmax.next_ip();
+
+            CHECK(a_v6_base.to_string() == "2001:db8::"s);
+            CHECK((a_v6_base.to_string() + "/32") == a_v6_net.to_string());
+            CHECK(a_v6_next.to_string() == "2001:db8::1"s);
+            CHECK(a_v6_netmax.to_string() == "2001:db8:ffff:ffff:ffff:ffff:ffff:ffff"s);
+            CHECK(a_v6_maxplus.to_string() == "2001:db9::"s);
+
+            // ipv6 type; increment ipv6::hi
+            auto b_v6_base = ipv6(0x2001, 0xdb8, 0, 0, max_u16t, max_u16t, max_u16t, max_u16t);
+            auto b_v6_net = b_v6_base / 32;
+            auto b_v6_netmax = b_v6_net.max_ip();
+
+            auto b_v6_next = *b_v6_base.next_ip();
+            auto b_v6_maxplus = *b_v6_netmax.next_ip();
+
+            CHECK(b_v6_netmax == a_v6_netmax);
+            CHECK(b_v6_base.to_string() == "2001:db8::ffff:ffff:ffff:ffff"s);
+            CHECK(b_v6_netmax.to_string() == a_v6_netmax.to_string());  //  "2001:db8:ffff:ffff:ffff:ffff:ffff:ffff"
+
+            CHECK(b_v6_maxplus == a_v6_maxplus);
+            CHECK(b_v6_next.to_string() == "2001:db8:0:1::"s);
+            CHECK(b_v6_maxplus.to_string() == a_v6_maxplus.to_string());  //  "2001:db9::"
+
+            // overflow
+            CHECK(not ipv6(std::make_pair(max_u64t, max_u64t)).next_ip().has_value());
+
+            // construct to address type
+            auto a_v6_max_addr = Address{a_v6_netmax};
+            auto b_v6_max_addr = Address{b_v6_netmax};
+
+            CHECK(a_v6_max_addr.to_string() == "[2001:db8:ffff:ffff:ffff:ffff:ffff:ffff]:0"s);
+
+            CHECK(a_v6_max_addr == b_v6_max_addr);
+            CHECK(a_v6_max_addr.to_string() == b_v6_max_addr.to_string());
+
+            // ipv6 type; increment ipv6::lo with high mask
+            auto c_v6_net = a_v6_base / 96;
+            auto c_v6_netmax = c_v6_net.max_ip();
+            auto c_v6_maxplus = *c_v6_netmax.next_ip();
+
+            CHECK(c_v6_net.to_string() == "2001:db8::/96"s);
+            CHECK(c_v6_netmax.to_string() == "2001:db8::ffff:ffff"s);
+            CHECK(c_v6_maxplus.to_string() == "2001:db8::1:0:0"s);
         }
 
         SECTION("IPv4 Addresses", "[ipv4][constructors][ipaddr]")
         {
-            uint32_t v4_n;                      // network order ipv4 addr
-            auto v4_h = "192.168.1.1"s;         // host order ipv4 string
+            uint32_t v4_h;                      // host order ipv4 addr
+            auto v4_hstr = "192.168.1.1"s;      // host order ipv4 string
             auto v4_full = "192.168.1.1:123"s;  // full ipv4 addr/port string
 
-            REQUIRE(inet_pton(AF_INET, v4_h.c_str(), &v4_n));
+            char buf[INET_ADDRSTRLEN] = {};
+            REQUIRE(inet_pton(AF_INET, v4_hstr.c_str(), &buf));
+            v4_h = oxenc::load_big_to_host<uint32_t>(&buf);
 
-            in_addr v4_inaddr;
-#ifndef _WIN32
-            v4_inaddr.s_addr = v4_n;
-#else
-            v4_inaddr.S_un.S_addr = v4_n;
-#endif
+            ipv4 v4_host_order{v4_h};
+            in_addr v4_inaddr = v4_host_order.operator in_addr();
 
-            ipv4 v4_net_order{v4_n};
-            ipv4 v4_private{v4_h};
+            Address v4_from_ipv4{v4_hstr, 123};
+            ipv4 v4_private = v4_from_ipv4.to_ipv4();
 
-            Address v4_from_ipv4{v4_private, 123};
-            Address v4_from_ipv4_n{v4_net_order, 123};
+            Address v4_from_ipv4_h{v4_host_order, 123};
             Address v4_from_inaddr{};
             v4_from_inaddr.set_addr(&v4_inaddr);
             v4_from_inaddr.set_port(123);
 
-            CHECK(v4_from_ipv4 == v4_from_ipv4_n);
-            CHECK(v4_from_ipv4_n == v4_from_inaddr);
+            CHECK(v4_from_ipv4 == v4_from_ipv4_h);
+            CHECK(v4_from_ipv4_h == v4_from_inaddr);
 
-            CHECK(v4_net_order == v4_inaddr);
-            CHECK(v4_private == v4_net_order);
-
-            CHECK(v4_private.to_string() == v4_h);
-            CHECK(v4_net_order.to_string() == v4_h);
+            CHECK(v4_private.to_string() == v4_hstr);
 
             auto ipv4_from_addr = v4_from_ipv4.to_ipv4();
-            auto ipv4_from_addr_n = v4_from_ipv4_n.to_ipv4();
+            auto ipv4_from_addr_n = v4_from_ipv4_h.to_ipv4();
 
             REQUIRE(ipv4_from_addr == ipv4_from_addr_n);
 
             CHECK(ipv4_from_addr == v4_private);
-            CHECK(ipv4_from_addr == v4_net_order);
 
             CHECK(v4_from_ipv4.to_string() == v4_full);
-            CHECK(v4_from_ipv4_n.to_string() == v4_full);
+            CHECK(v4_from_ipv4_h.to_string() == v4_full);
         }
 
         SECTION("IPv6 Addresses", "[ipv6][constructors][ipaddr]")
@@ -186,7 +251,7 @@ namespace oxen::quic::test
             ipv6 addr_from_in6addr{&localnet_in6addr};
             in6_addr localnet_from_ipv6 = addr_from_in6addr.to_in6();
 
-            ipv6 weird_addr{weird};
+            ipv6 weird_addr = Address{weird, 0}.to_ipv6();
 
             Address address_from_v6{addr_localnet, 123};
             Address address_from_v6_in6{addr_from_in6addr, 123};
