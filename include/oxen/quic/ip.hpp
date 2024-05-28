@@ -62,6 +62,8 @@ namespace oxen::quic
             return b;
         }
 
+        constexpr ipv4_net() = default;
+
         constexpr ipv4_net(ipv4 b, uint8_t m) : base{b.to_base(m)}, mask{m} {}
 
         const std::string to_string() const;
@@ -171,6 +173,8 @@ namespace oxen::quic
 
             return b;
         }
+
+        constexpr ipv6_net() = default;
 
         constexpr ipv6_net(ipv6 b, uint8_t m) : base{b.to_base(m)}, mask{m} {}
 
