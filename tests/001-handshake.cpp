@@ -130,12 +130,14 @@ namespace oxen::quic::test
             CHECK((ipv6(0x2001, 0xdb8, 0xffff, 0, 0, 0, 0, 0) / 32).contains(ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0)));
 
             auto v4_base = ipv4(10, 0, 0, 0);
+            auto v4_base_from_str = ipv4("10.0.0.0"s);
             auto v4_net = v4_base / 8;
             auto v4_netmax = v4_net.max_ip();
 
             auto v4_next = *v4_base.next_ip();
             auto v4_maxplus = *v4_netmax.next_ip();
 
+            CHECK(v4_base == v4_base_from_str);
             CHECK(v4_base.to_string() == "10.0.0.0"s);
             CHECK(v4_next.to_string() == "10.0.0.1"s);
             CHECK(v4_netmax.to_string() == "10.255.255.255"s);
@@ -148,11 +150,11 @@ namespace oxen::quic::test
             auto v4_max_addr = Address{v4_netmax};
             CHECK(v4_max_addr.to_string() == "10.255.255.255:0"s);
 
-            constexpr auto max_u64t = std::numeric_limits<uint64_t>::max();
             constexpr auto max_u16t = std::numeric_limits<uint16_t>::max();
 
             // ipv6 type; increment ipv6::lo
             auto a_v6_base = ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0);
+            auto a_v6_base_from_str = ipv6("2001:db8::"s);
             auto a_v6_net = a_v6_base / 32;
             auto a_v6_netmax = a_v6_net.max_ip();
 
@@ -160,6 +162,7 @@ namespace oxen::quic::test
             auto a_v6_maxplus = *a_v6_netmax.next_ip();
 
             CHECK(a_v6_base.to_string() == "2001:db8::"s);
+            CHECK(a_v6_base == a_v6_base_from_str);
             CHECK((a_v6_base.to_string() + "/32") == a_v6_net.to_string());
             CHECK(a_v6_next.to_string() == "2001:db8::1"s);
             CHECK(a_v6_netmax.to_string() == "2001:db8:ffff:ffff:ffff:ffff:ffff:ffff"s);
@@ -182,7 +185,9 @@ namespace oxen::quic::test
             CHECK(b_v6_maxplus.to_string() == a_v6_maxplus.to_string());  //  "2001:db9::"
 
             // overflow
-            CHECK(not ipv6(std::make_pair(max_u64t, max_u64t)).next_ip().has_value());
+            CHECK(not ipv6(max_u16t, max_u16t, max_u16t, max_u16t, max_u16t, max_u16t, max_u16t, max_u16t)
+                              .next_ip()
+                              .has_value());
 
             // construct to address type
             auto a_v6_max_addr = Address{a_v6_netmax};

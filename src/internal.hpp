@@ -24,4 +24,26 @@ namespace oxen::quic
             1;
 #endif
 
+    // Wrapper around inet_pton that throws an exception on error
+    inline void parse_addr(int af, void* dest, const std::string& from)
+    {
+        auto rv = inet_pton(af, from.c_str(), dest);
+
+        if (rv == 0)  // inet_pton returns this on invalid input
+            throw std::invalid_argument{"Unable to parse IP address!"};
+        if (rv < 0)
+            throw std::system_error{errno, std::system_category()};
+    }
+
+    // Parses an IPv4 address from string
+    inline void parse_addr(in_addr& into, const std::string& from)
+    {
+        parse_addr(AF_INET, &into.s_addr, from);
+    }
+
+    // Parses an IPv6 address from string
+    inline void parse_addr(in6_addr& into, const std::string& from)
+    {
+        parse_addr(AF_INET6, &into, from);
+    }
 }  // namespace oxen::quic

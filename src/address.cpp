@@ -8,7 +8,6 @@ namespace oxen::quic
 {
     Address::Address(const std::string& addr, uint16_t port)
     {
-        int rv = 1;
         if (
 #ifndef OXEN_LIBQUIC_ADDRESS_NO_DUAL_STACK
                 addr.empty() ||
@@ -20,7 +19,7 @@ namespace oxen::quic
             sin6.sin6_port = oxenc::host_to_big(port);
             _addr.addrlen = sizeof(sockaddr_in6);
             if (!addr.empty())
-                rv = inet_pton(AF_INET6, addr.c_str(), &sin6.sin6_addr);
+                parse_addr(sin6.sin6_addr, addr);
             else
                 // Otherwise default to all-0 IPv6 address with the dual stack flag enabled
                 dual_stack = true;
@@ -34,12 +33,8 @@ namespace oxen::quic
 #ifdef OXEN_LIBQUIC_ADDRESS_NO_DUAL_STACK
             if (!addr.empty())
 #endif
-                rv = inet_pton(AF_INET, addr.c_str(), &sin4.sin_addr);
+                parse_addr(sin4.sin_addr, addr);
         }
-        if (rv == 0)  // inet_pton returns this on invalid input
-            throw std::invalid_argument{"Cannot construct address: invalid IP"};
-        if (rv < 0)
-            throw std::system_error{errno, std::system_category()};
     }
 
     Address::Address(const ngtcp2_addr& addr)
