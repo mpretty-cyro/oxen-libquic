@@ -180,7 +180,7 @@ namespace oxen::quic
 
         const std::string to_string() const;
 
-        constexpr bool operator==(const ipv6_net& a) { return std::tie(base, mask) == std::tie(a.base, a.mask); }
+        constexpr bool operator==(const ipv6_net& a) const { return std::tie(base, mask) == std::tie(a.base, a.mask); }
 
         constexpr bool contains(const ipv6& addr) const { return addr.to_base(mask) == base; }
     };
