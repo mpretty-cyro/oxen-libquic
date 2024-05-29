@@ -14,6 +14,8 @@ namespace oxen::quic
 
         constexpr ipv4() = default;
 
+        explicit ipv4(const std::string& str);
+
         constexpr ipv4(uint32_t a) : addr{a} {}
         constexpr ipv4(uint8_t a, uint8_t b, uint8_t c, uint8_t d) :
                 ipv4{uint32_t{a} << 24 | uint32_t{b} << 16 | uint32_t{c} << 8 | uint32_t{d}}
@@ -21,12 +23,10 @@ namespace oxen::quic
 
         constexpr std::optional<ipv4> next_ip() const
         {
-            std::optional<ipv4> ret = std::nullopt;
-
             if (not increment_will_overflow(addr))
-                ret = ipv4{addr + 1};
+                return ipv4{addr + 1};
 
-            return ret;
+            return std::nullopt;
         }
 
         const std::string to_string() const;
@@ -93,25 +93,33 @@ namespace oxen::quic
 
         constexpr ipv6() = default;
 
+        explicit ipv6(const std::string& str);
+
         constexpr std::optional<ipv6> next_ip() const
         {
             // If lo will not overflow, increment and return
             if (not increment_will_overflow(lo))
-                return ipv6{{hi, lo + 1}};
+            {
+                ipv6 next{*this};  //  hi is unchanged
+                next.lo = lo + 1;
+                return next;
+            }
 
             // If lo is INT_MAX, then:
             //  - if hi can be incremented, ++hi and set lo to all 0's
             //  - else, return nullopt
             if (not increment_will_overflow(hi))
-                return ipv6{{hi + 1, uint64_t{0}}};
+            {
+                ipv6 next{};  //  lo default set to 0
+                next.hi = hi + 1;
+                return next;
+            }
 
             return std::nullopt;
         }
 
         // Network order in6_addr constructor (calls private constructor)
         ipv6(const struct in6_addr* addr) : ipv6{addr->s6_addr} {}
-
-        constexpr ipv6(std::pair<uint64_t, uint64_t> hilo) : hi{hilo.first}, lo{hilo.second} {}
 
         explicit constexpr ipv6(
                 uint16_t a,
