@@ -803,7 +803,10 @@ namespace oxen::quic
             assert(n_packets > 0);  // n_packets, buf, bufsize now contain the unsent packets
             log::debug(log_cat, "Packet send blocked; queuing re-send");
 
-            _endpoint.get_socket()->when_writeable([this] {
+            _endpoint.get_socket()->when_writeable([&ep = _endpoint, connid = reference_id(), this] {
+                if (!ep.conns.count(connid))
+                    return;  // Connection has gone away (and so `this` isn't valid!)
+
                 if (send(nullptr))
                 {  // Send finished so we can start our timers up again
                     packet_io_ready();
@@ -819,10 +822,8 @@ namespace oxen::quic
             if (pkt_updater)
                 pkt_updater->cancel();
 
-            _endpoint.call([this]() {
-                log::debug(log_cat, "Endpoint deleting {}", reference_id());
-                _endpoint.drop_connection(*this, io_error{CONN_SEND_FAIL});
-            });
+            log::debug(log_cat, "Endpoint deleting {}", reference_id());
+            _endpoint.drop_connection(*this, io_error{CONN_SEND_FAIL});
 
             return false;
         }
@@ -1608,7 +1609,8 @@ namespace oxen::quic
             remote_pubkey = *remote_pk;
             tls_session->set_expected_remote_key(remote_pubkey);
 
-            if (auto maybe_token = _endpoint.get_path_validation_token(remote_pubkey))
+            auto maybe_token = _endpoint.get_path_validation_token(remote_pubkey);
+            if (maybe_token)
             {
                 settings.token = maybe_token->data();
                 settings.tokenlen = maybe_token->size();
