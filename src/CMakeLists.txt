@@ -38,6 +38,8 @@ target_link_libraries(quic
     libquic_internal
 )
 
+target_compile_features(quic INTERFACE cxx_std_20)
+
 set_target_properties(quic PROPERTIES LIBRARY_OUTPUT_NAME oxenquic)
 if(LIBQUIC_VERSION_SO)
     set_target_properties(quic PROPERTIES SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
