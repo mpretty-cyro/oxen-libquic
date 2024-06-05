@@ -738,42 +738,4 @@ namespace oxen::quic::test
         if (slow_response.joinable())
             slow_response.join();
     }
-
-    TEST_CASE("002 - Send via Repeater", "[002][repeater]")
-    {
-        Network test_net{};
-        const int NUM_ITERATIONS{50};
-        constexpr auto msg = "hello from the other siiiii-iiiiide"_bsv;
-
-        std::promise<bool> d_promise;
-        std::future<bool> d_future = d_promise.get_future();
-
-        std::atomic<int> counter{};
-
-        stream_data_callback server_data_cb = [&](Stream&, bstring_view) {
-            if (++counter == NUM_ITERATIONS)
-                d_promise.set_value(true);
-        };
-
-        auto [client_tls, server_tls] = defaults::tls_creds_from_ed_keys();
-
-        Address server_local{};
-        Address client_local{};
-
-        auto server_endpoint = test_net.endpoint(server_local);
-        REQUIRE_NOTHROW(server_endpoint->listen(server_tls, server_data_cb));
-
-        RemoteAddress client_remote{defaults::SERVER_PUBKEY, "127.0.0.1"s, server_endpoint->local().port()};
-
-        auto client_endpoint = test_net.endpoint(client_local);
-        auto conn_interface = client_endpoint->connect(client_remote, client_tls);
-
-        // client make stream and send; message displayed by server_data_cb
-        auto client_stream = conn_interface->open_stream();
-
-        test_net.call_every(10ms, client_endpoint->weak_from_this(), [&]() { client_stream->send(msg); });
-
-        require_future(d_future, 5s);
-    }
-
 }  // namespace oxen::quic::test

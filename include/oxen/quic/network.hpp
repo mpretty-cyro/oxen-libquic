@@ -68,6 +68,18 @@ namespace oxen::quic
             _loop->call_every(interval, std::move(caller), std::forward<Callable>(f));
         }
 
+        template <typename Callable>
+        std::shared_ptr<EventHandler> call_every(loop_time interval, Callable&& f, bool start_immediately = true)
+        {
+            return _loop->call_every(interval, std::forward<Callable>(f), start_immediately);
+        }
+
+        template <typename Callable>
+        void call_later(loop_time delay, Callable&& hook)
+        {
+            _loop->call_later(delay, std::forward<Callable>(hook));
+        }
+
       private:
         std::shared_ptr<Loop> _loop;
         std::atomic<bool> shutdown_immediate{false};

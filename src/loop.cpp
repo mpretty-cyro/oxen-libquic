@@ -29,6 +29,17 @@ namespace oxen::quic
         });
     }
 
+    /** Static casting to `decltype(timeval::tv_{sec,usec})` makes sure that;
+        - on linux
+            .tv_sec is type __time_t
+            .tv_usec is type __suseconds_t
+        - on OSX    (https://developer.apple.com/documentation/kernel/timeval)
+            .tv_sec is type __darwin_time_t
+                - this is an annoying typedef of `time_t`
+            .tv_usec is type __darwin_suseconds_t
+                - this is an equally annoying typedef for `suseconds_t`
+        Alas, yet again another mac idiosyncrasy...
+     */
     timeval loop_time_to_timeval(loop_time t)
     {
         return timeval{
@@ -36,7 +47,46 @@ namespace oxen::quic
                 .tv_usec = static_cast<decltype(timeval::tv_usec)>((t % 1s) / 1us)};
     }
 
-    void EventHandler::start(const loop_ptr& _loop, loop_time _interval, std::function<void()> task)
+    bool EventHandler::start()
+    {
+        if (_is_running or _is_stopped)
+            return false;
+
+        return event_add(ev.get(), &interval) == 0;
+    }
+
+    bool EventHandler::pause()
+    {
+        if (not _is_running or _is_stopped)
+            return false;
+
+        if (event_del(ev.get()) != 0)
+        {
+            log::critical(log_cat, "EventHandler failed to pause repeating event!");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool EventHandler::stop()
+    {
+        if (not _is_running and _is_stopped)
+        {
+            log::critical(log_cat, "EventHandler is already permanently stopped!");
+            return false;
+        }
+
+        ev.reset();
+        f = nullptr;
+        _is_running = false;
+        _is_stopped = true;
+
+        return true;
+    }
+
+    void EventHandler::start_event(
+            const loop_ptr& _loop, loop_time _interval, std::function<void()> task, bool persist, bool start_immediately)
     {
         f = std::move(task);
         interval = loop_time_to_timeval(_interval);
@@ -44,27 +94,34 @@ namespace oxen::quic
         ev.reset(event_new(
                 _loop.get(),
                 -1,
-                EV_PERSIST,
+                persist ? EV_PERSIST : 0,
                 [](evutil_socket_t, short, void* s) {
-                    auto* self = reinterpret_cast<EventHandler*>(s);
-                    // execute callback
-                    self->f();
+                    try
+                    {
+                        auto* self = reinterpret_cast<EventHandler*>(s);
+                        // execute callback
+                        self->f();
+                    }
+                    catch (const std::exception& e)
+                    {
+                        log::critical(log_cat, "EventHandler caught exception: {}", e.what());
+                    }
                 },
                 this));
 
-        event_add(ev.get(), &interval);
+        if (start_immediately and not start())
+            log::critical(log_cat, "Failed to immediately start event repeater!");
     }
 
     EventHandler::~EventHandler()
     {
-        log::critical(log_cat, "Shutting down repeate eventhandler!");
         ev.reset();
         f = nullptr;
     }
 
     std::shared_ptr<EventHandler> Loop::make_handler()
     {
-        return std::make_shared<EventHandler>();
+        return make_shared<EventHandler>();
     }
 
     Loop::Loop(std::shared_ptr<::event_base> loop_ptr, std::thread::id thread_id) :
@@ -162,17 +219,6 @@ namespace oxen::quic
 #ifdef _WIN32
         WSACleanup();
 #endif
-    }
-
-    void Loop::call_soon(std::function<void(void)> f)
-    {
-        {
-            std::lock_guard lock{job_queue_mutex};
-            job_queue.emplace(std::move(f));
-            log::trace(log_cat, "Event loop now has {} jobs queued", job_queue.size());
-        }
-
-        event_active(job_waker.get(), 0, 0);
     }
 
     void Loop::shutdown(bool immediate)
