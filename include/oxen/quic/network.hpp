@@ -62,6 +62,12 @@ namespace oxen::quic
             call_soon([ptr = std::move(ptr)]() mutable { ptr.reset(); });
         }
 
+        template <typename Callable>
+        void call_every(loop_time interval, std::weak_ptr<void> caller, Callable&& f)
+        {
+            _loop->call_every(interval, std::move(caller), std::forward<Callable>(f));
+        }
+
       private:
         std::shared_ptr<Loop> _loop;
         std::atomic<bool> shutdown_immediate{false};

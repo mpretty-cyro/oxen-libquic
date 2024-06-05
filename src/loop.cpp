@@ -29,6 +29,44 @@ namespace oxen::quic
         });
     }
 
+    timeval loop_time_to_timeval(loop_time t)
+    {
+        return timeval{
+                .tv_sec = static_cast<decltype(timeval::tv_sec)>(t / 1s),
+                .tv_usec = static_cast<decltype(timeval::tv_usec)>((t % 1s) / 1us)};
+    }
+
+    void EventHandler::start(const loop_ptr& _loop, loop_time _interval, std::function<void()> task)
+    {
+        f = std::move(task);
+        interval = loop_time_to_timeval(_interval);
+
+        ev.reset(event_new(
+                _loop.get(),
+                -1,
+                EV_PERSIST,
+                [](evutil_socket_t, short, void* s) {
+                    auto* self = reinterpret_cast<EventHandler*>(s);
+                    // execute callback
+                    self->f();
+                },
+                this));
+
+        event_add(ev.get(), &interval);
+    }
+
+    EventHandler::~EventHandler()
+    {
+        log::critical(log_cat, "Shutting down repeate eventhandler!");
+        ev.reset();
+        f = nullptr;
+    }
+
+    std::shared_ptr<EventHandler> Loop::make_handler()
+    {
+        return std::make_shared<EventHandler>();
+    }
+
     Loop::Loop(std::shared_ptr<::event_base> loop_ptr, std::thread::id thread_id) :
             ev_loop{std::move(loop_ptr)}, loop_thread_id{thread_id}
     {

@@ -22,6 +22,23 @@ namespace oxen::quic
 
     static void setup_libevent_logging();
 
+    using loop_time = std::chrono::microseconds;
+    using event_ptr = oxen::quic::event_ptr;
+    using loop_ptr = std::shared_ptr<::event_base>;
+
+    struct EventHandler
+    {
+        event_ptr ev;
+        timeval interval;
+        std::function<void()> f;
+
+        EventHandler() = default;
+
+        ~EventHandler();
+
+        void start(const loop_ptr& _loop, loop_time _interval, std::function<void()> task);
+    };
+
     class Loop
     {
         friend class Network;
@@ -46,6 +63,8 @@ namespace oxen::quic
 
         bool in_event_loop() const { return std::this_thread::get_id() == loop_thread_id; }
 
+        std::shared_ptr<EventHandler> make_handler();
+
         // Returns a pointer deleter that defers the actual destruction call to this network
         // object's event loop.
         template <typename T>
@@ -58,7 +77,9 @@ namespace oxen::quic
         template <typename T, typename Callable>
         auto wrapped_deleter(Callable&& f)
         {
-            return [this, f = std::move(f)](T* ptr) { return call_get([f = std::move(f), ptr]() { return f(ptr); }); };
+            return [this, func = std::forward<Callable>(f)](T* ptr) {
+                return call_get([f = std::move(func), ptr]() { return f(ptr); });
+            };
         }
 
         // Similar in concept to std::make_shared<T>, but it creates the shared pointer with a
@@ -77,7 +98,7 @@ namespace oxen::quic
         template <typename T, typename Callable>
         std::shared_ptr<T> shared_ptr(T* obj, Callable&& deleter)
         {
-            return std::shared_ptr<T>(obj, wrapped_deleter<T>(std::move(deleter)));
+            return std::shared_ptr<T>(obj, wrapped_deleter<T>(std::forward<Callable>(deleter)));
         }
 
         template <typename Callable>
@@ -122,6 +143,23 @@ namespace oxen::quic
             });
 
             return fut.get();
+        }
+
+        template <typename Callable>
+        void call_every(loop_time interval, std::weak_ptr<void> caller, Callable&& f)
+        {
+            auto handler = make_handler();
+            // grab the reference before giving ownership of the repeater to the lambda
+            auto& h = *handler;
+
+            h.start(loop(),
+                    interval,
+                    [hndlr = std::move(handler), owner = std::move(caller), func = std::forward<Callable>(f)]() mutable {
+                        if (auto ptr = owner.lock())
+                            func();
+                        else
+                            hndlr.reset();
+                    });
         }
 
         void call_soon(std::function<void(void)> f);
