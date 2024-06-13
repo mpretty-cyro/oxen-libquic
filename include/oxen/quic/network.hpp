@@ -63,19 +63,19 @@ namespace oxen::quic
         }
 
         template <typename Callable>
-        void call_every(loop_time interval, std::weak_ptr<void> caller, Callable&& f)
+        void call_every(std::chrono::microseconds interval, std::weak_ptr<void> caller, Callable&& f)
         {
             _loop->call_every(interval, std::move(caller), std::forward<Callable>(f));
         }
 
         template <typename Callable>
-        std::shared_ptr<EventHandler> call_every(loop_time interval, Callable&& f, bool start_immediately = true)
+        std::shared_ptr<Ticker> call_every(std::chrono::microseconds interval, Callable&& f, bool start_immediately = true)
         {
             return _loop->call_every(interval, std::forward<Callable>(f), start_immediately);
         }
 
         template <typename Callable>
-        void call_later(loop_time delay, Callable&& hook)
+        void call_later(std::chrono::microseconds delay, Callable&& hook)
         {
             _loop->call_later(delay, std::forward<Callable>(hook));
         }

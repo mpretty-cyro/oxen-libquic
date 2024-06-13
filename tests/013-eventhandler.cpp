@@ -66,29 +66,31 @@ namespace oxen::quic::test
     {
         Network test_net{};
         const int NUM_ITERATIONS{10};
+        const auto INTERVAL{10ms};
+        const auto DELAY{2 * NUM_ITERATIONS * INTERVAL};
         constexpr auto msg = "hello from the other siiiii-iiiiide"_bsv;
 
         std::promise<bool> prom_a, prom_b;
         std::future<bool> fut_a = prom_a.get_future(), fut_b = prom_b.get_future();
 
         std::atomic<int> recv_counter{}, send_counter{};
-        std::atomic<bool> have_paused_handler{false};
+        // std::atomic<bool> have_stopped_handler{false};
 
-        std::shared_ptr<EventHandler> handler;
+        std::shared_ptr<Ticker> handler;
 
         stream_data_callback server_data_cb = [&](Stream&, bstring_view) {
             recv_counter += 1;
             if (recv_counter == NUM_ITERATIONS)
             {
-                if (not have_paused_handler)
-                {
-                    handler->pause();
-                    have_paused_handler = true;
-                }
-                else
-                {
-                    handler->stop();
-                }
+                handler->stop();
+                // if (not have_stopped_handler)
+                // {
+                //     have_stopped_handler = true;
+                // }
+                // else
+                // {
+                //     handler->stop();
+                // }
             }
         };
 
@@ -108,7 +110,7 @@ namespace oxen::quic::test
         // client make stream and send; message displayed by server_data_cb
         auto client_stream = conn_interface->open_stream();
 
-        handler = test_net.call_every(10ms, [&]() {
+        handler = test_net.call_every(INTERVAL, [&]() {
             if (send_counter <= NUM_ITERATIONS)
             {
                 send_counter += 1;
@@ -116,15 +118,14 @@ namespace oxen::quic::test
             }
         });
 
-        test_net.call_later(1s, [&]() {
+        REQUIRE(handler->is_running());
+
+        test_net.call_later(DELAY, [&]() {
             REQUIRE(recv_counter == send_counter);
             prom_a.set_value(true);
         });
 
         require_future(fut_a, 5s);
-
-        REQUIRE(handler->is_paused());
-        REQUIRE_FALSE(handler->is_stopped());
         REQUIRE_FALSE(handler->is_running());
 
         recv_counter = 0;
@@ -132,15 +133,12 @@ namespace oxen::quic::test
 
         REQUIRE(handler->start());
 
-        test_net.call_later(1s, [&]() {
+        test_net.call_later(DELAY, [&]() {
             REQUIRE(recv_counter == send_counter);
             prom_b.set_value(true);
         });
 
         require_future(fut_b, 5s);
-
-        REQUIRE(handler->is_stopped());
         REQUIRE_FALSE(handler->is_running());
-        REQUIRE_FALSE(handler->is_paused());
     }
 }  //  namespace oxen::quic::test

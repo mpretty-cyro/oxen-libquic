@@ -40,24 +40,32 @@ namespace oxen::quic
                 - this is an equally annoying typedef for `suseconds_t`
         Alas, yet again another mac idiosyncrasy...
      */
-    timeval loop_time_to_timeval(loop_time t)
+    timeval loop_time_to_timeval(std::chrono::microseconds t)
     {
         return timeval{
                 .tv_sec = static_cast<decltype(timeval::tv_sec)>(t / 1s),
                 .tv_usec = static_cast<decltype(timeval::tv_usec)>((t % 1s) / 1us)};
     }
 
-    bool EventHandler::start()
+    bool Ticker::start()
     {
-        if (_is_running or _is_stopped)
+        if (_is_running)
             return false;
 
-        return event_add(ev.get(), &interval) == 0;
+        if (event_add(ev.get(), &interval) != 0)
+        {
+            log::critical(log_cat, "EventHandler failed to start repeating event!");
+            return false;
+        }
+
+        _is_running = true;
+
+        return true;
     }
 
-    bool EventHandler::pause()
+    bool Ticker::stop()
     {
-        if (not _is_running or _is_stopped)
+        if (not _is_running)
             return false;
 
         if (event_del(ev.get()) != 0)
@@ -66,27 +74,17 @@ namespace oxen::quic
             return false;
         }
 
-        return true;
-    }
-
-    bool EventHandler::stop()
-    {
-        if (not _is_running and _is_stopped)
-        {
-            log::critical(log_cat, "EventHandler is already permanently stopped!");
-            return false;
-        }
-
-        ev.reset();
-        f = nullptr;
         _is_running = false;
-        _is_stopped = true;
 
         return true;
     }
 
-    void EventHandler::start_event(
-            const loop_ptr& _loop, loop_time _interval, std::function<void()> task, bool persist, bool start_immediately)
+    void Ticker::start_event(
+            const loop_ptr& _loop,
+            std::chrono::microseconds _interval,
+            std::function<void()> task,
+            bool persist,
+            bool start_immediately)
     {
         f = std::move(task);
         interval = loop_time_to_timeval(_interval);
@@ -98,7 +96,7 @@ namespace oxen::quic
                 [](evutil_socket_t, short, void* s) {
                     try
                     {
-                        auto* self = reinterpret_cast<EventHandler*>(s);
+                        auto* self = reinterpret_cast<Ticker*>(s);
                         // execute callback
                         self->f();
                     }
@@ -113,15 +111,29 @@ namespace oxen::quic
             log::critical(log_cat, "Failed to immediately start event repeater!");
     }
 
-    EventHandler::~EventHandler()
+    Ticker::~Ticker()
     {
         ev.reset();
         f = nullptr;
     }
 
-    std::shared_ptr<EventHandler> Loop::make_handler()
+    void Loop::clear_old_tickers()
     {
-        return make_shared<EventHandler>();
+        for (auto itr = _tickers.begin(); itr != _tickers.end();)
+        {
+            if (itr->expired())
+                itr = _tickers.erase(itr);
+            else
+                ++itr;
+        }
+    }
+
+    std::shared_ptr<Ticker> Loop::make_handler()
+    {
+        clear_old_tickers();
+        auto t = make_shared<Ticker>();
+        _tickers.push_back(t);
+        return t;
     }
 
     Loop::Loop(std::shared_ptr<::event_base> loop_ptr, std::thread::id thread_id) :
@@ -230,6 +242,17 @@ namespace oxen::quic
 
         if (loop_thread and loop_thread->joinable())
             loop_thread->join();
+
+        log::debug(log_cat, "Stopping all tickers...");
+
+        for (auto t : _tickers)
+        {
+            if (auto tick = t.lock())
+            {
+                tick->f = nullptr;
+                tick->stop();
+            }
+        }
 
         log::info(log_cat, "Loop shutdown complete");
     }
