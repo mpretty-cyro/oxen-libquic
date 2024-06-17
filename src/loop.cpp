@@ -1,7 +1,6 @@
 #include "loop.hpp"
 
 #include "internal.hpp"
-// #include "utils.hpp"
 
 namespace oxen::quic
 {
@@ -42,7 +41,9 @@ namespace oxen::quic
      */
     timeval loop_time_to_timeval(std::chrono::microseconds t)
     {
-        return timeval{.tv_sec = static_cast<time_t>(t / 1s), .tv_usec = static_cast<suseconds_t>((t % 1s) / 1us)};
+        return timeval{
+                .tv_sec = static_cast<decltype(timeval::tv_sec)>(t / 1s),
+                .tv_usec = static_cast<decltype(timeval::tv_usec)>((t % 1s) / 1us)};
     }
 
     bool Ticker::start()

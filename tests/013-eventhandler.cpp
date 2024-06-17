@@ -19,9 +19,6 @@ namespace oxen::quic::test
     TEST_CASE("013 - EventHandler event repeater: calling object lifetime bound", "[013][repeater][caller]")
     {
         Network test_net{};
-        // const int NUM_ITERATIONS{10};
-        // const auto INTERVAL{10ms};
-        // const auto DELAY{2 * NUM_ITERATIONS * INTERVAL};
         constexpr auto msg = "hello from the other siiiii-iiiiide"_bsv;
 
         std::promise<void> d_promise;
@@ -69,9 +66,6 @@ namespace oxen::quic::test
     TEST_CASE("013 - EventHandler event repeater: EventHandler managed lifetime", "[013][repeater][managed]")
     {
         Network test_net{};
-        // const int NUM_ITERATIONS{10};
-        // const auto INTERVAL{10ms};
-        // const auto DELAY{2 * NUM_ITERATIONS * INTERVAL};
         constexpr auto msg = "hello from the other siiiii-iiiiide"_bsv;
 
         std::promise<void> prom_a, prom_b;
