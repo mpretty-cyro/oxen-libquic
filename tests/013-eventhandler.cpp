@@ -9,17 +9,23 @@
 
 namespace oxen::quic::test
 {
-    struct lifetime : public std::enable_shared_from_this<lifetime>
+    struct lifetime
     {};
+
+    constexpr int NUM_ITERATIONS{10};
+    constexpr auto INTERVAL{10ms};
+    constexpr auto DELAY{2 * NUM_ITERATIONS * INTERVAL};
 
     TEST_CASE("013 - EventHandler event repeater: calling object lifetime bound", "[013][repeater][caller]")
     {
         Network test_net{};
-        const int NUM_ITERATIONS{10};
+        // const int NUM_ITERATIONS{10};
+        // const auto INTERVAL{10ms};
+        // const auto DELAY{2 * NUM_ITERATIONS * INTERVAL};
         constexpr auto msg = "hello from the other siiiii-iiiiide"_bsv;
 
-        std::promise<bool> d_promise;
-        std::future<bool> d_future = d_promise.get_future();
+        std::promise<void> d_promise;
+        std::future<void> d_future = d_promise.get_future();
 
         std::atomic<int> recv_counter{}, send_counter{};
 
@@ -43,7 +49,7 @@ namespace oxen::quic::test
 
         auto life = std::make_shared<lifetime>();
 
-        test_net.call_every(10ms, life->weak_from_this(), [&]() {
+        test_net.call_every(INTERVAL, life, [&]() {
             if (send_counter <= NUM_ITERATIONS)
             {
                 ++send_counter;
@@ -53,28 +59,25 @@ namespace oxen::quic::test
                 life.reset();
         });
 
-        test_net.call_later(1s, [&]() {
-            REQUIRE(recv_counter == send_counter);
-            REQUIRE(!life);
-            d_promise.set_value(true);
-        });
+        test_net.call_later(DELAY, [&]() { d_promise.set_value(); });
 
         require_future(d_future, 5s);
+        REQUIRE(!life);
+        REQUIRE(recv_counter == send_counter);
     }
 
     TEST_CASE("013 - EventHandler event repeater: EventHandler managed lifetime", "[013][repeater][managed]")
     {
         Network test_net{};
-        const int NUM_ITERATIONS{10};
-        const auto INTERVAL{10ms};
-        const auto DELAY{2 * NUM_ITERATIONS * INTERVAL};
+        // const int NUM_ITERATIONS{10};
+        // const auto INTERVAL{10ms};
+        // const auto DELAY{2 * NUM_ITERATIONS * INTERVAL};
         constexpr auto msg = "hello from the other siiiii-iiiiide"_bsv;
 
-        std::promise<bool> prom_a, prom_b;
-        std::future<bool> fut_a = prom_a.get_future(), fut_b = prom_b.get_future();
+        std::promise<void> prom_a, prom_b;
+        std::future<void> fut_a = prom_a.get_future(), fut_b = prom_b.get_future();
 
         std::atomic<int> recv_counter{}, send_counter{};
-        // std::atomic<bool> have_stopped_handler{false};
 
         std::shared_ptr<Ticker> handler;
 
@@ -83,14 +86,6 @@ namespace oxen::quic::test
             if (recv_counter == NUM_ITERATIONS)
             {
                 handler->stop();
-                // if (not have_stopped_handler)
-                // {
-                //     have_stopped_handler = true;
-                // }
-                // else
-                // {
-                //     handler->stop();
-                // }
             }
         };
 
@@ -120,12 +115,10 @@ namespace oxen::quic::test
 
         REQUIRE(handler->is_running());
 
-        test_net.call_later(DELAY, [&]() {
-            REQUIRE(recv_counter == send_counter);
-            prom_a.set_value(true);
-        });
+        test_net.call_later(DELAY, [&]() { prom_a.set_value(); });
 
         require_future(fut_a, 5s);
+        REQUIRE(recv_counter == send_counter);
         REQUIRE_FALSE(handler->is_running());
 
         recv_counter = 0;
@@ -133,12 +126,10 @@ namespace oxen::quic::test
 
         REQUIRE(handler->start());
 
-        test_net.call_later(DELAY, [&]() {
-            REQUIRE(recv_counter == send_counter);
-            prom_b.set_value(true);
-        });
+        test_net.call_later(DELAY, [&]() { prom_b.set_value(); });
 
         require_future(fut_b, 5s);
+        REQUIRE(recv_counter == send_counter);
         REQUIRE_FALSE(handler->is_running());
     }
 }  //  namespace oxen::quic::test

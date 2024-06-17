@@ -240,15 +240,14 @@ namespace oxen::quic
             }
             else
             {
-                call_soon([this,
-                           func = std::move(hook),
-                           target_time = get_timestamp<std::chrono::microseconds>() + delay]() mutable {
-                    auto updated_delay = target_time - get_timestamp<std::chrono::microseconds>();
+                call_soon([this, func = std::move(hook), target_time = get_time() + delay]() mutable {
+                    auto now = get_time();
 
-                    if (updated_delay <= 0us)
+                    if (now >= target_time)
                         func();
                     else
-                        add_oneshot_event(updated_delay, std::move(func));
+                        add_oneshot_event(
+                                std::chrono::duration_cast<std::chrono::microseconds>(target_time - now), std::move(func));
                 });
             }
         }
