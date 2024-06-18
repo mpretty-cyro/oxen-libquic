@@ -1,7 +1,6 @@
 #include "loop.hpp"
 
 #include "internal.hpp"
-// #include "utils.hpp"
 
 namespace oxen::quic
 {
@@ -27,6 +26,113 @@ namespace oxen::quic
             }
             std::abort();
         });
+    }
+
+    /** Static casting to `decltype(timeval::tv_{sec,usec})` makes sure that;
+        - on linux
+            .tv_sec is type __time_t
+            .tv_usec is type __suseconds_t
+        - on OSX    (https://developer.apple.com/documentation/kernel/timeval)
+            .tv_sec is type __darwin_time_t
+                - this is an annoying typedef of `time_t`
+            .tv_usec is type __darwin_suseconds_t
+                - this is an equally annoying typedef for `suseconds_t`
+        Alas, yet again another mac idiosyncrasy...
+     */
+    timeval loop_time_to_timeval(std::chrono::microseconds t)
+    {
+        return timeval{
+                .tv_sec = static_cast<decltype(timeval::tv_sec)>(t / 1s),
+                .tv_usec = static_cast<decltype(timeval::tv_usec)>((t % 1s) / 1us)};
+    }
+
+    bool Ticker::start()
+    {
+        if (_is_running)
+            return false;
+
+        if (event_add(ev.get(), &interval) != 0)
+        {
+            log::critical(log_cat, "EventHandler failed to start repeating event!");
+            return false;
+        }
+
+        _is_running = true;
+
+        return true;
+    }
+
+    bool Ticker::stop()
+    {
+        if (not _is_running)
+            return false;
+
+        if (event_del(ev.get()) != 0)
+        {
+            log::critical(log_cat, "EventHandler failed to pause repeating event!");
+            return false;
+        }
+
+        _is_running = false;
+
+        return true;
+    }
+
+    void Ticker::start_event(
+            const loop_ptr& _loop,
+            std::chrono::microseconds _interval,
+            std::function<void()> task,
+            bool persist,
+            bool start_immediately)
+    {
+        f = std::move(task);
+        interval = loop_time_to_timeval(_interval);
+
+        ev.reset(event_new(
+                _loop.get(),
+                -1,
+                persist ? EV_PERSIST : 0,
+                [](evutil_socket_t, short, void* s) {
+                    try
+                    {
+                        auto* self = reinterpret_cast<Ticker*>(s);
+                        // execute callback
+                        self->f();
+                    }
+                    catch (const std::exception& e)
+                    {
+                        log::critical(log_cat, "EventHandler caught exception: {}", e.what());
+                    }
+                },
+                this));
+
+        if (start_immediately and not start())
+            log::critical(log_cat, "Failed to immediately start event repeater!");
+    }
+
+    Ticker::~Ticker()
+    {
+        ev.reset();
+        f = nullptr;
+    }
+
+    void Loop::clear_old_tickers()
+    {
+        for (auto itr = _tickers.begin(); itr != _tickers.end();)
+        {
+            if (itr->expired())
+                itr = _tickers.erase(itr);
+            else
+                ++itr;
+        }
+    }
+
+    std::shared_ptr<Ticker> Loop::make_handler()
+    {
+        clear_old_tickers();
+        auto t = make_shared<Ticker>();
+        _tickers.push_back(t);
+        return t;
     }
 
     Loop::Loop(std::shared_ptr<::event_base> loop_ptr, std::thread::id thread_id) :
@@ -126,17 +232,6 @@ namespace oxen::quic
 #endif
     }
 
-    void Loop::call_soon(std::function<void(void)> f)
-    {
-        {
-            std::lock_guard lock{job_queue_mutex};
-            job_queue.emplace(std::move(f));
-            log::trace(log_cat, "Event loop now has {} jobs queued", job_queue.size());
-        }
-
-        event_active(job_waker.get(), 0, 0);
-    }
-
     void Loop::shutdown(bool immediate)
     {
         log::info(log_cat, "Shutting down loop...");
@@ -146,6 +241,17 @@ namespace oxen::quic
 
         if (loop_thread and loop_thread->joinable())
             loop_thread->join();
+
+        log::debug(log_cat, "Stopping all tickers...");
+
+        for (auto t : _tickers)
+        {
+            if (auto tick = t.lock())
+            {
+                tick->f = nullptr;
+                tick->stop();
+            }
+        }
 
         log::info(log_cat, "Loop shutdown complete");
     }

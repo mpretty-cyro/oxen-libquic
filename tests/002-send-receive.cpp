@@ -738,5 +738,4 @@ namespace oxen::quic::test
         if (slow_response.joinable())
             slow_response.join();
     }
-
 }  // namespace oxen::quic::test

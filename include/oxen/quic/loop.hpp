@@ -8,6 +8,7 @@ extern "C"
 
 #include <atomic>
 #include <cstdint>
+#include <forward_list>
 #include <future>
 #include <memory>
 #include <thread>
@@ -21,6 +22,49 @@ namespace oxen::quic
     using Job = std::function<void()>;
 
     static void setup_libevent_logging();
+
+    using loop_ptr = std::shared_ptr<::event_base>;
+
+    class Loop;
+
+    struct Ticker
+    {
+        friend class Loop;
+
+      private:
+        std::atomic<bool> _is_running{false};
+        event_ptr ev;
+        timeval interval;
+        std::function<void()> f;
+
+        void start_event(
+                const loop_ptr& _loop,
+                std::chrono::microseconds _interval,
+                std::function<void()> task,
+                bool persist = true,
+                bool start_immediately = true);
+
+        Ticker() = default;
+
+      public:
+        ~Ticker();
+
+        bool is_running() const { return _is_running; }
+
+        /** Starts the repeating event on the given interval on Ticker creation
+            Returns:
+                - true: event successfully started
+                - false: event is already running, or failed to start the event
+         */
+        bool start();
+
+        /** Stops the repeating event managed by Ticker
+            Returns:
+                - true: event successfully stopped
+                - false: event is already stopped, or failed to stop the event
+         */
+        bool stop();
+    };
 
     class Loop
     {
@@ -36,6 +80,28 @@ namespace oxen::quic
         std::queue<Job> job_queue;
         std::mutex job_queue_mutex;
 
+        template <std::invocable Callable>
+        void add_oneshot_event(std::chrono::microseconds delay, Callable hook)
+        {
+            auto handler = make_handler();
+            auto& h = *handler;
+
+            h.start_event(
+                    loop(),
+                    delay,
+                    [hndlr = std::move(handler), func = std::move(hook)]() mutable {
+                        auto h = std::move(hndlr);
+                        func();
+                        h.reset();
+                    },
+                    false);
+        }
+
+      private:
+        std::list<std::weak_ptr<Ticker>> _tickers;
+
+        void clear_old_tickers();
+
       public:
         Loop();
         Loop(std::shared_ptr<::event_base> loop_ptr, std::thread::id thread_id);
@@ -46,6 +112,8 @@ namespace oxen::quic
 
         bool in_event_loop() const { return std::this_thread::get_id() == loop_thread_id; }
 
+        std::shared_ptr<Ticker> make_handler();
+
         // Returns a pointer deleter that defers the actual destruction call to this network
         // object's event loop.
         template <typename T>
@@ -55,10 +123,12 @@ namespace oxen::quic
         }
 
         // Returns a pointer deleter that defers invocation of a custom deleter to the event loop
-        template <typename T, typename Callable>
-        auto wrapped_deleter(Callable&& f)
+        template <typename T, std::invocable<T*> Callable>
+        auto wrapped_deleter(Callable f)
         {
-            return [this, f = std::move(f)](T* ptr) { return call_get([f = std::move(f), ptr]() { return f(ptr); }); };
+            return [this, func = std::move(f)](T* ptr) mutable {
+                return call_get([f = std::move(func), ptr]() { return f(ptr); });
+            };
         }
 
         // Similar in concept to std::make_shared<T>, but it creates the shared pointer with a
@@ -77,7 +147,7 @@ namespace oxen::quic
         template <typename T, typename Callable>
         std::shared_ptr<T> shared_ptr(T* obj, Callable&& deleter)
         {
-            return std::shared_ptr<T>(obj, wrapped_deleter<T>(std::move(deleter)));
+            return std::shared_ptr<T>(obj, wrapped_deleter<T>(std::forward<Callable>(deleter)));
         }
 
         template <typename Callable>
@@ -124,7 +194,74 @@ namespace oxen::quic
             return fut.get();
         }
 
-        void call_soon(std::function<void(void)> f);
+        /** This overload of `call_every` will begin an indefinitely repeating object tied to the lifetime of `caller`.
+            Prior to executing each iteration, the weak_ptr will be checked to ensure the calling object lifetime has
+            persisted up to that point.
+        */
+        template <typename Callable>
+        void call_every(std::chrono::microseconds interval, std::weak_ptr<void> caller, Callable&& f)
+        {
+            auto handler = make_handler();
+            // grab the reference before giving ownership of the repeater to the lambda
+            auto& h = *handler;
+
+            h.start_event(
+                    loop(),
+                    interval,
+                    [hndlr = std::move(handler), owner = std::move(caller), func = std::forward<Callable>(f)]() mutable {
+                        if (auto ptr = owner.lock())
+                            func();
+                        else
+                            hndlr.reset();
+                    });
+        }
+
+        /** This overload of `call_every` will return an EventHandler object from which the application can start and stop
+            the repeated event. It is NOT tied to the lifetime of the caller via a weak_ptr. If the application wants
+            to defer start until explicitly calling EventHandler::start(), `start_immediately` should take a false boolean.
+        */
+        template <typename Callable>
+        [[nodiscard]] std::shared_ptr<Ticker> call_every(
+                std::chrono::microseconds interval, Callable&& f, bool start_immediately = true)
+        {
+            auto h = make_handler();
+
+            h->start_event(loop(), interval, std::forward<Callable>(f), true, start_immediately);
+
+            return h;
+        }
+
+        template <std::invocable Callable>
+        void call_later(std::chrono::microseconds delay, Callable hook)
+        {
+            if (in_event_loop())
+            {
+                add_oneshot_event(delay, std::move(hook));
+            }
+            else
+            {
+                call_soon([this, func = std::move(hook), target_time = get_time() + delay]() mutable {
+                    auto now = get_time();
+
+                    if (now >= target_time)
+                        func();
+                    else
+                        add_oneshot_event(
+                                std::chrono::duration_cast<std::chrono::microseconds>(target_time - now), std::move(func));
+                });
+            }
+        }
+
+        template <std::invocable Callable>
+        void call_soon(Callable f)
+        {
+            {
+                std::lock_guard lock{job_queue_mutex};
+                job_queue.emplace(std::move(f));
+            }
+
+            event_active(job_waker.get(), 0, 0);
+        }
 
         void shutdown(bool immediate = false);
 

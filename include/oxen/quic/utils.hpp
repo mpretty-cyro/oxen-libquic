@@ -200,6 +200,12 @@ namespace oxen::quic
     std::chrono::steady_clock::time_point get_time();
     std::chrono::nanoseconds get_timestamp();
 
+    template <typename unit_t>
+    auto get_timestamp()
+    {
+        return std::chrono::duration_cast<unit_t>(get_timestamp());
+    }
+
     std::string str_tolower(std::string s);
 
     template <std::integral T>
