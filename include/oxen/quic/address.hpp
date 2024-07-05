@@ -277,6 +277,7 @@ namespace oxen::quic
         // Convenience method for debugging, etc.  This is usually called implicitly by passing the
         // Address to fmt to format it.
         std::string to_string() const;
+        constexpr static bool to_string_formattable = true;
     };
 
     struct RemoteAddress : public Address
@@ -359,6 +360,7 @@ namespace oxen::quic
         Path invert() const { return {remote, local}; }
 
         std::string to_string() const;
+        constexpr static bool to_string_formattable = true;
     };
 }  // namespace oxen::quic
 

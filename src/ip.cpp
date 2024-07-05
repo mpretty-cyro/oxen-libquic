@@ -11,7 +11,7 @@ namespace oxen::quic
         addr = oxenc::big_to_host(sin.s_addr);
     }
 
-    const std::string ipv4::to_string() const
+    std::string ipv4::to_string() const
     {
         char buf[INET_ADDRSTRLEN] = {};
         uint32_t net = oxenc::host_to_big(addr);
@@ -20,7 +20,7 @@ namespace oxen::quic
         return "{}"_format(buf);
     }
 
-    const std::string ipv4_net::to_string() const
+    std::string ipv4_net::to_string() const
     {
         return "{}/{}"_format(base.to_string(), mask);
     }
@@ -44,7 +44,7 @@ namespace oxen::quic
         lo = oxenc::load_big_to_host<uint64_t>(&sin6.s6_addr[8]);
     }
 
-    const std::string ipv6::to_string() const
+    std::string ipv6::to_string() const
     {
         char buf[INET6_ADDRSTRLEN] = {};
 
