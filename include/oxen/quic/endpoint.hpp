@@ -234,7 +234,7 @@ namespace oxen::quic
         std::map<ustring, ustring> encoded_transport_params;
         std::map<ustring, ustring> path_validation_tokens;
 
-        const std::shared_ptr<event_base>& get_loop() { return net.loop(); }
+        const std::shared_ptr<event_base>& get_loop() { return net._loop->loop(); }
 
         const std::unique_ptr<UDPSocket>& get_socket() { return socket; }
 
@@ -309,7 +309,7 @@ namespace oxen::quic
 
         const ustring& static_secret() const { return _static_secret; }
 
-        Connection* fetch_associated_conn(ngtcp2_cid* cid);
+        Connection* fetch_associated_conn(quic_cid& cid);
 
         ConnectionID next_reference_id();
 

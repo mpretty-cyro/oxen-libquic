@@ -83,7 +83,7 @@ namespace oxen::quic
         template <std::invocable Callable>
         void add_oneshot_event(std::chrono::microseconds delay, Callable hook)
         {
-            auto handler = make_handler();
+            auto handler = make_handler(Loop::loop_id);
             auto& h = *handler;
 
             h.start_event(
@@ -98,21 +98,27 @@ namespace oxen::quic
         }
 
       private:
-        std::list<std::weak_ptr<Ticker>> _tickers;
+        static constexpr uint16_t loop_id{0};
+
+        std::unordered_map<uint16_t, std::list<std::weak_ptr<Ticker>>> tickers;
 
         void clear_old_tickers();
 
+        std::shared_ptr<Ticker> make_handler(uint16_t _id);
+
       public:
         Loop();
-        Loop(std::shared_ptr<::event_base> loop_ptr, std::thread::id thread_id);
+
+        Loop(const Loop&) = delete;
+        Loop(Loop&&) = delete;
+        Loop& operator=(Loop&&) = delete;
+        Loop& operator=(Loop) = delete;
 
         virtual ~Loop();
 
         const std::shared_ptr<::event_base>& loop() const { return ev_loop; }
 
         bool in_event_loop() const { return std::this_thread::get_id() == loop_thread_id; }
-
-        std::shared_ptr<Ticker> make_handler();
 
         // Returns a pointer deleter that defers the actual destruction call to this network
         // object's event loop.
@@ -201,19 +207,7 @@ namespace oxen::quic
         template <typename Callable>
         void call_every(std::chrono::microseconds interval, std::weak_ptr<void> caller, Callable&& f)
         {
-            auto handler = make_handler();
-            // grab the reference before giving ownership of the repeater to the lambda
-            auto& h = *handler;
-
-            h.start_event(
-                    loop(),
-                    interval,
-                    [hndlr = std::move(handler), owner = std::move(caller), func = std::forward<Callable>(f)]() mutable {
-                        if (auto ptr = owner.lock())
-                            func();
-                        else
-                            hndlr.reset();
-                    });
+            _call_every(interval, std::move(caller), std::forward<Callable>(f), Loop::loop_id);
         }
 
         /** This overload of `call_every` will return an EventHandler object from which the application can start and stop
@@ -224,11 +218,7 @@ namespace oxen::quic
         [[nodiscard]] std::shared_ptr<Ticker> call_every(
                 std::chrono::microseconds interval, Callable&& f, bool start_immediately = true)
         {
-            auto h = make_handler();
-
-            h->start_event(loop(), interval, std::forward<Callable>(f), true, start_immediately);
-
-            return h;
+            return _call_every(interval, std::forward<Callable>(f), Loop::loop_id, start_immediately);
         }
 
         template <std::invocable Callable>
@@ -263,9 +253,41 @@ namespace oxen::quic
             event_active(job_waker.get(), 0, 0);
         }
 
-        void shutdown(bool immediate = false);
-
       private:
+        // private method invoked in Network destructor by final Network to close shared_ptr
+        void stop_thread(bool immediate = true);
+
+        void stop_tickers(uint16_t _id);
+
+        template <typename Callable>
+        void _call_every(std::chrono::microseconds interval, std::weak_ptr<void> caller, Callable&& f, uint16_t _id)
+        {
+            auto handler = make_handler(_id);
+            // grab the reference before giving ownership of the repeater to the lambda
+            auto& h = *handler;
+
+            h.start_event(
+                    loop(),
+                    interval,
+                    [hndlr = std::move(handler), owner = std::move(caller), func = std::forward<Callable>(f)]() mutable {
+                        if (auto ptr = owner.lock())
+                            func();
+                        else
+                            hndlr.reset();
+                    });
+        }
+
+        template <typename Callable>
+        [[nodiscard]] std::shared_ptr<Ticker> _call_every(
+                std::chrono::microseconds interval, Callable&& f, uint16_t _id, bool start_immediately)
+        {
+            auto h = make_handler(_id);
+
+            h->start_event(loop(), interval, std::forward<Callable>(f), true, start_immediately);
+
+            return h;
+        }
+
         void setup_job_waker();
 
         void process_job_queue();

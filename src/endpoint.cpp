@@ -221,7 +221,7 @@ namespace oxen::quic
         // check existing conns
         log::trace(log_cat, "Incoming connection ID: {}", dcid);
 
-        auto cptr = fetch_associated_conn(&dcid);
+        auto cptr = fetch_associated_conn(dcid);
 
         if (!cptr)
         {
@@ -502,10 +502,8 @@ namespace oxen::quic
         conn_lookup.erase(ccid);
     }
 
-    Connection* Endpoint::fetch_associated_conn(ngtcp2_cid* cid)
+    Connection* Endpoint::fetch_associated_conn(quic_cid& ccid)
     {
-        auto ccid = quic_cid{*cid};
-
         if (auto it_a = conn_lookup.find(ccid); it_a != conn_lookup.end())
         {
             if (auto it_b = conns.find(it_a->second); it_b != conns.end())

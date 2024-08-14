@@ -116,36 +116,6 @@ namespace oxen::quic
         f = nullptr;
     }
 
-    void Loop::clear_old_tickers()
-    {
-        for (auto itr = _tickers.begin(); itr != _tickers.end();)
-        {
-            if (itr->expired())
-                itr = _tickers.erase(itr);
-            else
-                ++itr;
-        }
-    }
-
-    std::shared_ptr<Ticker> Loop::make_handler()
-    {
-        clear_old_tickers();
-        auto t = make_shared<Ticker>();
-        _tickers.push_back(t);
-        return t;
-    }
-
-    Loop::Loop(std::shared_ptr<::event_base> loop_ptr, std::thread::id thread_id) :
-            ev_loop{std::move(loop_ptr)}, loop_thread_id{thread_id}
-    {
-        assert(ev_loop);
-        log::trace(log_cat, "Beginning event loop creation with pre-existing ev loop thread");
-
-        setup_job_waker();
-
-        running.store(true);
-    }
-
     static std::vector<std::string_view> get_ev_methods()
     {
         std::vector<std::string_view> ev_methods_avail;
@@ -219,11 +189,18 @@ namespace oxen::quic
     {
         log::info(log_cat, "Shutting down loop...");
 
-        if (loop_thread)
-            event_base_loopbreak(ev_loop.get());
+        stop_thread();
 
-        if (loop_thread and loop_thread->joinable())
-            loop_thread->join();
+        for (auto& [id, list] : tickers)
+        {
+            std::for_each(list.begin(), list.end(), [](auto& t) {
+                if (auto tick = t.lock())
+                {
+                    tick->f = nullptr;
+                    tick->stop();
+                }
+            });
+        }
 
         log::info(log_cat, "Loop shutdown complete");
 
@@ -232,28 +209,50 @@ namespace oxen::quic
 #endif
     }
 
-    void Loop::shutdown(bool immediate)
+    void Loop::stop_thread(bool immediate)
     {
-        log::info(log_cat, "Shutting down loop...");
-
         if (loop_thread)
             immediate ? event_base_loopbreak(ev_loop.get()) : event_base_loopexit(ev_loop.get(), nullptr);
 
         if (loop_thread and loop_thread->joinable())
             loop_thread->join();
+    }
 
-        log::debug(log_cat, "Stopping all tickers...");
-
-        for (auto t : _tickers)
+    void Loop::clear_old_tickers()
+    {
+        for (auto& [id, list] : tickers)
         {
-            if (auto tick = t.lock())
+            for (auto itr = list.begin(); itr != list.end();)
             {
-                tick->f = nullptr;
-                tick->stop();
+                if (itr->expired())
+                    itr = list.erase(itr);
+                else
+                    ++itr;
             }
         }
+    }
 
-        log::info(log_cat, "Loop shutdown complete");
+    std::shared_ptr<Ticker> Loop::make_handler(uint16_t _id)
+    {
+        clear_old_tickers();
+        auto t = make_shared<Ticker>();
+        tickers[_id].push_back(t);
+        return t;
+    }
+
+    void Loop::stop_tickers(uint16_t id)
+    {
+        if (auto it = tickers.find(id); it != tickers.end())
+        {
+            for (auto& t : it->second)
+            {
+                if (auto tick = t.lock())
+                {
+                    tick->f = nullptr;
+                    tick->stop();
+                }
+            }
+        }
     }
 
     void Loop::setup_job_waker()

@@ -12,18 +12,14 @@
 
 namespace oxen::quic
 {
-    Network::Network(std::shared_ptr<event_base> loop_ptr, std::thread::id thread_id) :
-            _loop{std::make_shared<Loop>(std::move(loop_ptr), thread_id)}
-    {
-        log::trace(log_cat, "Created network context with pre-existing libevent loop and thread!");
-    }
+    int Network::next_netid = 0;
 
-    Network::Network(std::shared_ptr<Loop> ev_loop) : _loop{std::move(ev_loop)}
+    Network::Network(std::shared_ptr<Loop> ev_loop) : _loop{std::move(ev_loop)}, netid{++next_netid}
     {
         log::trace(log_cat, "Creating network context with pre-existing event loop!");
     }
 
-    Network::Network() : _loop{std::make_shared<Loop>()} {}
+    Network::Network() : _loop{std::make_shared<Loop>()}, netid{++next_netid} {}
 
     Network::~Network()
     {
@@ -32,11 +28,19 @@ namespace oxen::quic
         if (not shutdown_immediate)
             close_gracefully();
 
-        _loop->shutdown(shutdown_immediate);
+        // If the loop is internally managed by the Network ("standard ownership"), then this ensures that the last Network
+        // to turn the lights off has time to allow for any final objects to be destructed off of the event loop
+        if (_loop.use_count() == 1)
+            _loop->stop_thread(shutdown_immediate);
 
-        endpoint_map.clear();
+        _loop->stop_tickers(netid);
 
         log::info(log_cat, "Network shutdown complete");
+    }
+
+    Network Network::create_linked_network()
+    {
+        return Network{_loop};
     }
 
     void Network::close_gracefully()

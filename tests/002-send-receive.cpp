@@ -131,18 +131,18 @@ namespace oxen::quic::test
         RemoteAddress server_remote_a{defaults::SERVER_PUBKEY, "127.0.0.1"s, server_endpoint_a->local().port()};
         RemoteAddress server_remote_b{defaults::SERVER_PUBKEY, "127.0.0.1"s, server_endpoint_b->local().port()};
 
-        auto server_a_ci = server_endpoint_b->connect(server_remote_a, server_tls);
-        auto server_a_stream = server_a_ci->open_stream();
-
-        server_a_stream->send(good_msg);
-
-        require_future(d_futures[0]);
-
-        auto server_b_ci = server_endpoint_a->connect(server_remote_b, server_tls);
-
+        auto server_b_ci = server_endpoint_b->connect(server_remote_a, server_tls);
         auto server_b_stream = server_b_ci->open_stream();
 
         server_b_stream->send(good_msg);
+
+        require_future(d_futures[0]);
+
+        auto server_a_ci = server_endpoint_a->connect(server_remote_b, server_tls);
+
+        auto server_a_stream = server_a_ci->open_stream();
+
+        server_a_stream->send(good_msg);
 
         require_future(d_futures[1]);
     }
