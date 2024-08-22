@@ -11,6 +11,20 @@ namespace oxen::quic::test
 
     TEST_CASE("001 - Handshaking: Types", "[001][handshake][tls][types]")
     {
+        SECTION("Network and Loop Construction")
+        {
+            // Standard ownership
+            auto standard_neta = std::make_unique<Network>();
+            auto standard_netb = std::make_unique<Network>(standard_neta->create_linked_network());
+            REQUIRE_FALSE(standard_neta == standard_netb);
+
+            // Application ownership
+            auto loop = std::make_shared<Loop>();
+            auto app_neta = std::make_unique<Network>(loop);
+            auto app_netb = std::make_unique<Network>(loop);
+            REQUIRE_FALSE(app_neta == app_netb);
+        }
+
         SECTION("TLS Credentials")
         {
             auto [client_tls, server_tls] = defaults::tls_creds_from_ed_keys();
