@@ -12,14 +12,14 @@
 
 namespace oxen::quic
 {
-    int Network::next_netid = 0;
+    caller_id_t Network::next_net_id = 0;
 
-    Network::Network(std::shared_ptr<Loop> ev_loop) : _loop{std::move(ev_loop)}, netid{++next_netid}
+    Network::Network(std::shared_ptr<Loop> ev_loop) : _loop{std::move(ev_loop)}, net_id{++next_net_id}
     {
         log::trace(log_cat, "Creating network context with pre-existing event loop!");
     }
 
-    Network::Network() : _loop{std::make_shared<Loop>()}, netid{++next_netid} {}
+    Network::Network() : _loop{std::make_shared<Loop>()}, net_id{++next_net_id} {}
 
     Network::~Network()
     {
@@ -33,7 +33,7 @@ namespace oxen::quic
         if (_loop.use_count() == 1)
             _loop->stop_thread(shutdown_immediate);
 
-        _loop->stop_tickers(netid);
+        _loop->stop_tickers(net_id);
 
         log::info(log_cat, "Network shutdown complete");
     }

@@ -232,7 +232,7 @@ namespace oxen::quic
         }
     }
 
-    std::shared_ptr<Ticker> Loop::make_handler(uint16_t _id)
+    std::shared_ptr<Ticker> Loop::make_handler(caller_id_t _id)
     {
         clear_old_tickers();
         auto t = make_shared<Ticker>();
@@ -240,7 +240,7 @@ namespace oxen::quic
         return t;
     }
 
-    void Loop::stop_tickers(uint16_t id)
+    void Loop::stop_tickers(caller_id_t id)
     {
         if (auto it = tickers.find(id); it != tickers.end())
         {

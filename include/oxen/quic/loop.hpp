@@ -20,10 +20,10 @@ extern "C"
 namespace oxen::quic
 {
     using Job = std::function<void()>;
+    using loop_ptr = std::shared_ptr<::event_base>;
+    using caller_id_t = uint16_t;
 
     static void setup_libevent_logging();
-
-    using loop_ptr = std::shared_ptr<::event_base>;
 
     class Loop;
 
@@ -98,13 +98,13 @@ namespace oxen::quic
         }
 
       private:
-        static constexpr uint16_t loop_id{0};
+        static constexpr caller_id_t loop_id{0};
 
-        std::unordered_map<uint16_t, std::list<std::weak_ptr<Ticker>>> tickers;
+        std::unordered_map<caller_id_t, std::list<std::weak_ptr<Ticker>>> tickers;
 
         void clear_old_tickers();
 
-        std::shared_ptr<Ticker> make_handler(uint16_t _id);
+        std::shared_ptr<Ticker> make_handler(caller_id_t _id);
 
       public:
         Loop();
@@ -257,10 +257,10 @@ namespace oxen::quic
         // private method invoked in Network destructor by final Network to close shared_ptr
         void stop_thread(bool immediate = true);
 
-        void stop_tickers(uint16_t _id);
+        void stop_tickers(caller_id_t _id);
 
         template <typename Callable>
-        void _call_every(std::chrono::microseconds interval, std::weak_ptr<void> caller, Callable&& f, uint16_t _id)
+        void _call_every(std::chrono::microseconds interval, std::weak_ptr<void> caller, Callable&& f, caller_id_t _id)
         {
             auto handler = make_handler(_id);
             // grab the reference before giving ownership of the repeater to the lambda
@@ -279,7 +279,7 @@ namespace oxen::quic
 
         template <typename Callable>
         [[nodiscard]] std::shared_ptr<Ticker> _call_every(
-                std::chrono::microseconds interval, Callable&& f, uint16_t _id, bool start_immediately)
+                std::chrono::microseconds interval, Callable&& f, caller_id_t _id, bool start_immediately)
         {
             auto h = make_handler(_id);
 

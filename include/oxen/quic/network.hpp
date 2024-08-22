@@ -86,13 +86,13 @@ namespace oxen::quic
         template <typename Callable>
         void call_every(std::chrono::microseconds interval, std::weak_ptr<void> caller, Callable&& f)
         {
-            _loop->_call_every(interval, std::move(caller), std::forward<Callable>(f), netid);
+            _loop->_call_every(interval, std::move(caller), std::forward<Callable>(f), net_id);
         }
 
         template <typename Callable>
         std::shared_ptr<Ticker> call_every(std::chrono::microseconds interval, Callable&& f, bool start_immediately = true)
         {
-            return _loop->_call_every(interval, std::forward<Callable>(f), netid, start_immediately);
+            return _loop->_call_every(interval, std::forward<Callable>(f), net_id, start_immediately);
         }
 
         template <typename Callable>
@@ -112,8 +112,8 @@ namespace oxen::quic
 
         void close_gracefully();
 
-        const int netid;
+        const caller_id_t net_id;
 
-        static int next_netid;
+        static caller_id_t next_net_id;
     };
 }  // namespace oxen::quic
