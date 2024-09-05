@@ -41,10 +41,13 @@ namespace oxen::quic
                 const loop_ptr& _loop,
                 std::chrono::microseconds _interval,
                 std::function<void()> task,
-                bool persist = true,
                 bool start_immediately = true);
 
+        void execute_event(const loop_ptr& _loop, std::chrono::microseconds _delay, std::function<void()> task);
+
         Ticker() = default;
+
+        void fire();
 
       public:
         ~Ticker();
@@ -86,15 +89,11 @@ namespace oxen::quic
             auto handler = make_handler(Loop::loop_id);
             auto& h = *handler;
 
-            h.start_event(
-                    loop(),
-                    delay,
-                    [hndlr = std::move(handler), func = std::move(hook)]() mutable {
-                        auto h = std::move(hndlr);
-                        func();
-                        h.reset();
-                    },
-                    false);
+            h.execute_event(loop(), delay, [hndlr = std::move(handler), func = std::move(hook)]() mutable {
+                auto h = std::move(hndlr);
+                func();
+                h.reset();
+            });
         }
 
       private:
@@ -200,17 +199,7 @@ namespace oxen::quic
             return fut.get();
         }
 
-        /** This overload of `call_every` will begin an indefinitely repeating object tied to the lifetime of `caller`.
-            Prior to executing each iteration, the weak_ptr will be checked to ensure the calling object lifetime has
-            persisted up to that point.
-        */
-        template <typename Callable>
-        void call_every(std::chrono::microseconds interval, std::weak_ptr<void> caller, Callable&& f)
-        {
-            _call_every(interval, std::move(caller), std::forward<Callable>(f), Loop::loop_id);
-        }
-
-        /** This overload of `call_every` will return an EventHandler object from which the application can start and stop
+        /** This invocation of `call_every` will return an EventHandler object from which the application can start and stop
             the repeated event. It is NOT tied to the lifetime of the caller via a weak_ptr. If the application wants
             to defer start until explicitly calling EventHandler::start(), `start_immediately` should take a false boolean.
         */
@@ -260,30 +249,12 @@ namespace oxen::quic
         void stop_tickers(caller_id_t _id);
 
         template <typename Callable>
-        void _call_every(std::chrono::microseconds interval, std::weak_ptr<void> caller, Callable&& f, caller_id_t _id)
-        {
-            auto handler = make_handler(_id);
-            // grab the reference before giving ownership of the repeater to the lambda
-            auto& h = *handler;
-
-            h.start_event(
-                    loop(),
-                    interval,
-                    [hndlr = std::move(handler), owner = std::move(caller), func = std::forward<Callable>(f)]() mutable {
-                        if (auto ptr = owner.lock())
-                            func();
-                        else
-                            hndlr.reset();
-                    });
-        }
-
-        template <typename Callable>
         [[nodiscard]] std::shared_ptr<Ticker> _call_every(
                 std::chrono::microseconds interval, Callable&& f, caller_id_t _id, bool start_immediately)
         {
             auto h = make_handler(_id);
 
-            h->start_event(loop(), interval, std::forward<Callable>(f), true, start_immediately);
+            h->start_event(loop(), interval, std::forward<Callable>(f), start_immediately);
 
             return h;
         }

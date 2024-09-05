@@ -78,12 +78,47 @@ namespace oxen::quic
         return true;
     }
 
+    void Ticker::fire()
+    {
+        f();
+        event_del(ev.get());
+        event_add(ev.get(), &interval);
+    }
+
+    void Ticker::execute_event(const loop_ptr& _loop, std::chrono::microseconds _delay, std::function<void()> task)
+    {
+        f = std::move(task);
+        interval = loop_time_to_timeval(_delay);
+
+        ev.reset(event_new(
+                _loop.get(),
+                -1,
+                0,
+                [](evutil_socket_t, short, void* s) {
+                    try
+                    {
+                        auto* self = reinterpret_cast<Ticker*>(s);
+                        if (not self->f)
+                        {
+                            log::critical(log_cat, "EventTicker does not have a callback to execute!");
+                            return;
+                        }
+                        // execute callback
+                        self->f();
+                    }
+                    catch (const std::exception& e)
+                    {
+                        log::critical(log_cat, "EventTicker caught exception: {}", e.what());
+                    }
+                },
+                this));
+
+        if (not start())
+            log::critical(log_cat, "Failed to immediately start one-off event!");
+    }
+
     void Ticker::start_event(
-            const loop_ptr& _loop,
-            std::chrono::microseconds _interval,
-            std::function<void()> task,
-            bool persist,
-            bool start_immediately)
+            const loop_ptr& _loop, std::chrono::microseconds _interval, std::function<void()> task, bool start_immediately)
     {
         f = std::move(task);
         interval = loop_time_to_timeval(_interval);
@@ -91,17 +126,27 @@ namespace oxen::quic
         ev.reset(event_new(
                 _loop.get(),
                 -1,
-                persist ? EV_PERSIST : 0,
+                0,
                 [](evutil_socket_t, short, void* s) {
                     try
                     {
                         auto* self = reinterpret_cast<Ticker*>(s);
+                        if (not self->f)
+                        {
+                            log::critical(log_cat, "EventTicker does not have a callback to execute!");
+                            return;
+                        }
+                        if (not self->is_running())
+                        {
+                            log::critical(log_cat, "EventTicker attempting to execute finished event!");
+                            return;
+                        }
                         // execute callback
-                        self->f();
+                        self->fire();
                     }
                     catch (const std::exception& e)
                     {
-                        log::critical(log_cat, "EventHandler caught exception: {}", e.what());
+                        log::critical(log_cat, "EventTicker caught exception: {}", e.what());
                     }
                 },
                 this));
