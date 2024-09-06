@@ -78,17 +78,15 @@ namespace oxen::quic
         return true;
     }
 
-    void Ticker::fire()
+    void Ticker::init_event(const loop_ptr& _loop, std::chrono::microseconds _t, std::function<void()> task, bool one_off)
     {
-        f();
-        event_del(ev.get());
-        event_add(ev.get(), &interval);
-    }
+        f = one_off ? std::move(task) : [this, func = std::move(task)]() mutable {
+            func();
+            event_del(ev.get());
+            event_add(ev.get(), &interval);
+        };
 
-    void Ticker::execute_event(const loop_ptr& _loop, std::chrono::microseconds _delay, std::function<void()> task)
-    {
-        f = std::move(task);
-        interval = loop_time_to_timeval(_delay);
+        interval = loop_time_to_timeval(_t);
 
         ev.reset(event_new(
                 _loop.get(),
@@ -100,7 +98,7 @@ namespace oxen::quic
                         auto* self = reinterpret_cast<Ticker*>(s);
                         if (not self->f)
                         {
-                            log::critical(log_cat, "EventTicker does not have a callback to execute!");
+                            log::critical(log_cat, "Ticker does not have a callback to execute!");
                             return;
                         }
                         // execute callback
@@ -108,51 +106,13 @@ namespace oxen::quic
                     }
                     catch (const std::exception& e)
                     {
-                        log::critical(log_cat, "EventTicker caught exception: {}", e.what());
+                        log::critical(log_cat, "Ticker caught exception: {}", e.what());
                     }
                 },
                 this));
 
-        if (not start())
+        if (one_off and not start())
             log::critical(log_cat, "Failed to immediately start one-off event!");
-    }
-
-    void Ticker::start_event(
-            const loop_ptr& _loop, std::chrono::microseconds _interval, std::function<void()> task, bool start_immediately)
-    {
-        f = std::move(task);
-        interval = loop_time_to_timeval(_interval);
-
-        ev.reset(event_new(
-                _loop.get(),
-                -1,
-                0,
-                [](evutil_socket_t, short, void* s) {
-                    try
-                    {
-                        auto* self = reinterpret_cast<Ticker*>(s);
-                        if (not self->f)
-                        {
-                            log::critical(log_cat, "EventTicker does not have a callback to execute!");
-                            return;
-                        }
-                        if (not self->is_running())
-                        {
-                            log::critical(log_cat, "EventTicker attempting to execute finished event!");
-                            return;
-                        }
-                        // execute callback
-                        self->fire();
-                    }
-                    catch (const std::exception& e)
-                    {
-                        log::critical(log_cat, "EventTicker caught exception: {}", e.what());
-                    }
-                },
-                this));
-
-        if (start_immediately and not start())
-            log::critical(log_cat, "Failed to immediately start event repeater!");
     }
 
     Ticker::~Ticker()

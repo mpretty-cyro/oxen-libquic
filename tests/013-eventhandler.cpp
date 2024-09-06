@@ -60,6 +60,8 @@ namespace oxen::quic::test
             }
         });
 
+        handler->start();
+
         REQUIRE(handler->is_running());
         test_net.call_later(DELAY, [&]() { prom_a.set_value(); });
 

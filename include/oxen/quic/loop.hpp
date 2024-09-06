@@ -37,17 +37,10 @@ namespace oxen::quic
         timeval interval;
         std::function<void()> f;
 
-        void start_event(
-                const loop_ptr& _loop,
-                std::chrono::microseconds _interval,
-                std::function<void()> task,
-                bool start_immediately = true);
-
-        void execute_event(const loop_ptr& _loop, std::chrono::microseconds _delay, std::function<void()> task);
+        void init_event(
+                const loop_ptr& _loop, std::chrono::microseconds _t, std::function<void()> task, bool one_off = false);
 
         Ticker() = default;
-
-        void fire();
 
       public:
         ~Ticker();
@@ -89,11 +82,15 @@ namespace oxen::quic
             auto handler = make_handler(Loop::loop_id);
             auto& h = *handler;
 
-            h.execute_event(loop(), delay, [hndlr = std::move(handler), func = std::move(hook)]() mutable {
-                auto h = std::move(hndlr);
-                func();
-                h.reset();
-            });
+            h.init_event(
+                    loop(),
+                    delay,
+                    [hndlr = std::move(handler), func = std::move(hook)]() mutable {
+                        auto h = std::move(hndlr);
+                        func();
+                        h.reset();
+                    },
+                    true);
         }
 
       private:
@@ -204,10 +201,9 @@ namespace oxen::quic
             to defer start until explicitly calling EventHandler::start(), `start_immediately` should take a false boolean.
         */
         template <typename Callable>
-        [[nodiscard]] std::shared_ptr<Ticker> call_every(
-                std::chrono::microseconds interval, Callable&& f, bool start_immediately = true)
+        [[nodiscard]] std::shared_ptr<Ticker> call_every(std::chrono::microseconds interval, Callable&& f)
         {
-            return _call_every(interval, std::forward<Callable>(f), Loop::loop_id, start_immediately);
+            return _call_every(interval, std::forward<Callable>(f), Loop::loop_id);
         }
 
         template <std::invocable Callable>
@@ -249,12 +245,11 @@ namespace oxen::quic
         void stop_tickers(caller_id_t _id);
 
         template <typename Callable>
-        [[nodiscard]] std::shared_ptr<Ticker> _call_every(
-                std::chrono::microseconds interval, Callable&& f, caller_id_t _id, bool start_immediately)
+        [[nodiscard]] std::shared_ptr<Ticker> _call_every(std::chrono::microseconds interval, Callable&& f, caller_id_t _id)
         {
             auto h = make_handler(_id);
 
-            h->start_event(loop(), interval, std::forward<Callable>(f), start_immediately);
+            h->init_event(loop(), interval, std::forward<Callable>(f));
 
             return h;
         }

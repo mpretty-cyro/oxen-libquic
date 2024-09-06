@@ -84,10 +84,9 @@ namespace oxen::quic
         }
 
         template <typename Callable>
-        [[nodiscard]] std::shared_ptr<Ticker> call_every(
-                std::chrono::microseconds interval, Callable&& f, bool start_immediately = true)
+        [[nodiscard]] std::shared_ptr<Ticker> call_every(std::chrono::microseconds interval, Callable&& f)
         {
-            return _loop->_call_every(interval, std::forward<Callable>(f), net_id, start_immediately);
+            return _loop->_call_every(interval, std::forward<Callable>(f), net_id);
         }
 
         template <typename Callable>
