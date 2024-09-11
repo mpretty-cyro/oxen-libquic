@@ -78,9 +78,15 @@ namespace oxen::quic
         return true;
     }
 
-    void Ticker::init_event(const loop_ptr& _loop, std::chrono::microseconds _t, std::function<void()> task, bool one_off)
+    void Ticker::init_event(
+            const loop_ptr& _loop,
+            std::chrono::microseconds _t,
+            std::function<void()> task,
+            bool one_off,
+            bool start_immediately,
+            bool fixed_interval)
     {
-        f = one_off ? std::move(task) : [this, func = std::move(task)]() mutable {
+        f = (one_off or not fixed_interval) ? std::move(task) : [this, func = std::move(task)]() mutable {
             func();
             event_del(ev.get());
             event_add(ev.get(), &interval);
@@ -91,7 +97,7 @@ namespace oxen::quic
         ev.reset(event_new(
                 _loop.get(),
                 -1,
-                0,
+                fixed_interval ? 0 : EV_PERSIST,
                 [](evutil_socket_t, short, void* s) {
                     try
                     {
@@ -111,7 +117,7 @@ namespace oxen::quic
                 },
                 this));
 
-        if (one_off and not start())
+        if ((one_off or start_immediately) and not start())
             log::critical(log_cat, "Failed to immediately start one-off event!");
     }
 
@@ -166,6 +172,7 @@ namespace oxen::quic
 
         std::unique_ptr<event_config, decltype(&event_config_free)> ev_conf{event_config_new(), event_config_free};
         event_config_set_flag(ev_conf.get(), EVENT_BASE_FLAG_PRECISE_TIMER);
+        event_config_set_flag(ev_conf.get(), EVENT_BASE_FLAG_NO_CACHE_TIME);
         event_config_set_flag(ev_conf.get(), EVENT_BASE_FLAG_EPOLL_USE_CHANGELIST);
 
         ev_loop = std::shared_ptr<event_base>{event_base_new_with_config(ev_conf.get()), event_base_free};

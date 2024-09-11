@@ -83,10 +83,22 @@ namespace oxen::quic
             call_soon([ptr = std::move(ptr)]() mutable { ptr.reset(); });
         }
 
+        /** This invocation of `call_every` will return an EventHandler object from which the application can start and stop
+            the repeated event. It is NOT tied to the lifetime of the caller via a weak_ptr.
+
+            Configurable parameters:
+                - start_immediately : will call ::event_add() before returning the ticker
+                - fixed_interval :
+                        - if FALSE (default behavior), will attempt to execute every `interval`, regardless of how long the
+                            event itself takes
+                        - if TRUE, will wait the entire `interval` after finishing execution of the event before attempting
+                            execution again
+        */
         template <typename Callable>
-        [[nodiscard]] std::shared_ptr<Ticker> call_every(std::chrono::microseconds interval, Callable&& f)
+        [[nodiscard]] std::shared_ptr<Ticker> call_every(
+                std::chrono::microseconds interval, Callable&& f, bool start_immediately = true, bool fixed_interval = false)
         {
-            return _loop->_call_every(interval, std::forward<Callable>(f), net_id);
+            return _loop->_call_every(interval, std::forward<Callable>(f), net_id, start_immediately, fixed_interval);
         }
 
         template <typename Callable>

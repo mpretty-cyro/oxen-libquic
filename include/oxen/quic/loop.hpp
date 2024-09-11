@@ -38,7 +38,12 @@ namespace oxen::quic
         std::function<void()> f;
 
         void init_event(
-                const loop_ptr& _loop, std::chrono::microseconds _t, std::function<void()> task, bool one_off = false);
+                const loop_ptr& _loop,
+                std::chrono::microseconds _t,
+                std::function<void()> task,
+                bool one_off = false,
+                bool start_immediately = true,
+                bool fixed_interval = false);
 
         Ticker() = default;
 
@@ -79,7 +84,7 @@ namespace oxen::quic
         template <std::invocable Callable>
         void add_oneshot_event(std::chrono::microseconds delay, Callable hook)
         {
-            auto handler = make_handler(Loop::loop_id);
+            auto handler = make_shared<Ticker>();
             auto& h = *handler;
 
             h.init_event(
@@ -197,13 +202,21 @@ namespace oxen::quic
         }
 
         /** This invocation of `call_every` will return an EventHandler object from which the application can start and stop
-            the repeated event. It is NOT tied to the lifetime of the caller via a weak_ptr. If the application wants
-            to defer start until explicitly calling EventHandler::start(), `start_immediately` should take a false boolean.
+            the repeated event. It is NOT tied to the lifetime of the caller via a weak_ptr.
+
+            Configurable parameters:
+                - start_immediately : will call ::event_add() before returning the ticker
+                - fixed_interval :
+                        - if FALSE (default behavior), will attempt to execute every `interval`, regardless of how long the
+                            event itself takes
+                        - if TRUE, will wait the entire `interval` after finishing execution of the event before attempting
+                            execution again
         */
         template <typename Callable>
-        [[nodiscard]] std::shared_ptr<Ticker> call_every(std::chrono::microseconds interval, Callable&& f)
+        [[nodiscard]] std::shared_ptr<Ticker> call_every(
+                std::chrono::microseconds interval, Callable&& f, bool start_immediately = true, bool fixed_interval = false)
         {
-            return _call_every(interval, std::forward<Callable>(f), Loop::loop_id);
+            return _call_every(interval, std::forward<Callable>(f), Loop::loop_id, start_immediately, fixed_interval);
         }
 
         template <std::invocable Callable>
@@ -245,11 +258,16 @@ namespace oxen::quic
         void stop_tickers(caller_id_t _id);
 
         template <typename Callable>
-        [[nodiscard]] std::shared_ptr<Ticker> _call_every(std::chrono::microseconds interval, Callable&& f, caller_id_t _id)
+        [[nodiscard]] std::shared_ptr<Ticker> _call_every(
+                std::chrono::microseconds interval,
+                Callable&& f,
+                caller_id_t _id,
+                bool start_immediately,
+                bool fixed_interval)
         {
             auto h = make_handler(_id);
 
-            h->init_event(loop(), interval, std::forward<Callable>(f));
+            h->init_event(loop(), interval, std::forward<Callable>(f), false, start_immediately, fixed_interval);
 
             return h;
         }
