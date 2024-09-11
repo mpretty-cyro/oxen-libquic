@@ -78,36 +78,47 @@ namespace oxen::quic
         return true;
     }
 
-    void Ticker::start_event(
+    void Ticker::init_event(
             const loop_ptr& _loop,
-            std::chrono::microseconds _interval,
+            std::chrono::microseconds _t,
             std::function<void()> task,
-            bool persist,
-            bool start_immediately)
+            bool one_off,
+            bool start_immediately,
+            bool fixed_interval)
     {
-        f = std::move(task);
-        interval = loop_time_to_timeval(_interval);
+        f = (one_off or not fixed_interval) ? std::move(task) : [this, func = std::move(task)]() mutable {
+            func();
+            event_del(ev.get());
+            event_add(ev.get(), &interval);
+        };
+
+        interval = loop_time_to_timeval(_t);
 
         ev.reset(event_new(
                 _loop.get(),
                 -1,
-                persist ? EV_PERSIST : 0,
+                fixed_interval ? 0 : EV_PERSIST,
                 [](evutil_socket_t, short, void* s) {
                     try
                     {
                         auto* self = reinterpret_cast<Ticker*>(s);
+                        if (not self->f)
+                        {
+                            log::critical(log_cat, "Ticker does not have a callback to execute!");
+                            return;
+                        }
                         // execute callback
                         self->f();
                     }
                     catch (const std::exception& e)
                     {
-                        log::critical(log_cat, "EventHandler caught exception: {}", e.what());
+                        log::critical(log_cat, "Ticker caught exception: {}", e.what());
                     }
                 },
                 this));
 
-        if (start_immediately and not start())
-            log::critical(log_cat, "Failed to immediately start event repeater!");
+        if ((one_off or start_immediately) and not start())
+            log::critical(log_cat, "Failed to immediately start one-off event!");
     }
 
     Ticker::~Ticker()
@@ -161,6 +172,7 @@ namespace oxen::quic
 
         std::unique_ptr<event_config, decltype(&event_config_free)> ev_conf{event_config_new(), event_config_free};
         event_config_set_flag(ev_conf.get(), EVENT_BASE_FLAG_PRECISE_TIMER);
+        event_config_set_flag(ev_conf.get(), EVENT_BASE_FLAG_NO_CACHE_TIME);
         event_config_set_flag(ev_conf.get(), EVENT_BASE_FLAG_EPOLL_USE_CHANGELIST);
 
         ev_loop = std::shared_ptr<event_base>{event_base_new_with_config(ev_conf.get()), event_base_free};

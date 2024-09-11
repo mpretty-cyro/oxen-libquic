@@ -37,12 +37,13 @@ namespace oxen::quic
         timeval interval;
         std::function<void()> f;
 
-        void start_event(
+        void init_event(
                 const loop_ptr& _loop,
-                std::chrono::microseconds _interval,
+                std::chrono::microseconds _t,
                 std::function<void()> task,
-                bool persist = true,
-                bool start_immediately = true);
+                bool one_off = false,
+                bool start_immediately = true,
+                bool fixed_interval = false);
 
         Ticker() = default;
 
@@ -83,10 +84,10 @@ namespace oxen::quic
         template <std::invocable Callable>
         void add_oneshot_event(std::chrono::microseconds delay, Callable hook)
         {
-            auto handler = make_handler(Loop::loop_id);
+            auto handler = make_shared<Ticker>();
             auto& h = *handler;
 
-            h.start_event(
+            h.init_event(
                     loop(),
                     delay,
                     [hndlr = std::move(handler), func = std::move(hook)]() mutable {
@@ -94,7 +95,7 @@ namespace oxen::quic
                         func();
                         h.reset();
                     },
-                    false);
+                    true);
         }
 
       private:
@@ -200,25 +201,22 @@ namespace oxen::quic
             return fut.get();
         }
 
-        /** This overload of `call_every` will begin an indefinitely repeating object tied to the lifetime of `caller`.
-            Prior to executing each iteration, the weak_ptr will be checked to ensure the calling object lifetime has
-            persisted up to that point.
-        */
-        template <typename Callable>
-        void call_every(std::chrono::microseconds interval, std::weak_ptr<void> caller, Callable&& f)
-        {
-            _call_every(interval, std::move(caller), std::forward<Callable>(f), Loop::loop_id);
-        }
+        /** This invocation of `call_every` will return an EventHandler object from which the application can start and stop
+            the repeated event. It is NOT tied to the lifetime of the caller via a weak_ptr.
 
-        /** This overload of `call_every` will return an EventHandler object from which the application can start and stop
-            the repeated event. It is NOT tied to the lifetime of the caller via a weak_ptr. If the application wants
-            to defer start until explicitly calling EventHandler::start(), `start_immediately` should take a false boolean.
+            Configurable parameters:
+                - start_immediately : will call ::event_add() before returning the ticker
+                - fixed_interval :
+                        - if FALSE (default behavior), will attempt to execute every `interval`, regardless of how long the
+                            event itself takes
+                        - if TRUE, will wait the entire `interval` after finishing execution of the event before attempting
+                            execution again
         */
         template <typename Callable>
         [[nodiscard]] std::shared_ptr<Ticker> call_every(
-                std::chrono::microseconds interval, Callable&& f, bool start_immediately = true)
+                std::chrono::microseconds interval, Callable&& f, bool start_immediately = true, bool fixed_interval = false)
         {
-            return _call_every(interval, std::forward<Callable>(f), Loop::loop_id, start_immediately);
+            return _call_every(interval, std::forward<Callable>(f), Loop::loop_id, start_immediately, fixed_interval);
         }
 
         template <std::invocable Callable>
@@ -260,30 +258,16 @@ namespace oxen::quic
         void stop_tickers(caller_id_t _id);
 
         template <typename Callable>
-        void _call_every(std::chrono::microseconds interval, std::weak_ptr<void> caller, Callable&& f, caller_id_t _id)
-        {
-            auto handler = make_handler(_id);
-            // grab the reference before giving ownership of the repeater to the lambda
-            auto& h = *handler;
-
-            h.start_event(
-                    loop(),
-                    interval,
-                    [hndlr = std::move(handler), owner = std::move(caller), func = std::forward<Callable>(f)]() mutable {
-                        if (auto ptr = owner.lock())
-                            func();
-                        else
-                            hndlr.reset();
-                    });
-        }
-
-        template <typename Callable>
         [[nodiscard]] std::shared_ptr<Ticker> _call_every(
-                std::chrono::microseconds interval, Callable&& f, caller_id_t _id, bool start_immediately)
+                std::chrono::microseconds interval,
+                Callable&& f,
+                caller_id_t _id,
+                bool start_immediately,
+                bool fixed_interval)
         {
             auto h = make_handler(_id);
 
-            h->start_event(loop(), interval, std::forward<Callable>(f), true, start_immediately);
+            h->init_event(loop(), interval, std::forward<Callable>(f), false, start_immediately, fixed_interval);
 
             return h;
         }
