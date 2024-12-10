@@ -143,56 +143,78 @@ namespace oxen::quic::test
             CHECK((ipv6(0x2001, 0xdb8, 0xffff, 0, 0, 0, 0, 0) / 32).contains(ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0)));
             CHECK((ipv6(0x2001, 0xdb8, 0xffff, 0, 0, 0, 0, 0) / 32).contains(ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0)));
 
-            auto v4_base = ipv4(10, 0, 0, 0);
-            auto v4_base_from_str = ipv4("10.0.0.0"s);
-            auto v4_net = v4_base / 8;
-            auto v4_netmax = v4_net.max_ip();
+            auto v4_str = "10.0.0.1"s;
+
+            auto v4_base = ipv4(10, 0, 0, 1);
+            auto v4_base_from_str = ipv4(v4_str);
+            auto v4_net = v4_base % 8;
+            auto v4_range_from_net = v4_net.to_range();
+            auto v4_range = v4_base / 8;
+            auto v4_rangemax = v4_range.max_ip();
+            auto v4_broadcast = v4_range.broadcast();
 
             auto v4_next = *v4_base.next_ip();
-            auto v4_maxplus = *v4_netmax.next_ip();
+            auto v4_maxplus = *v4_rangemax.next_ip();
 
             CHECK(v4_base == v4_base_from_str);
-            CHECK(v4_base.to_string() == "10.0.0.0"s);
-            CHECK(v4_next.to_string() == "10.0.0.1"s);
-            CHECK(v4_netmax.to_string() == "10.255.255.255"s);
-            CHECK(v4_maxplus.to_string() == "11.0.0.0"s);
+            CHECK(v4_range_from_net == v4_range);
+            CHECK(v4_base.to_string() == v4_str);
+            CHECK(v4_net.ip.to_string() == v4_str);
+            CHECK(v4_net.to_string() == "{}/8"_format(v4_str));
+            CHECK(v4_range.to_string() == "10.0.0.0/8");
+            CHECK(v4_range.ip.to_string() == "10.0.0.0");
+            CHECK(v4_next.to_string() == "10.0.0.2");
+            CHECK(v4_rangemax.to_string() == "10.255.255.254"s);
+            CHECK(v4_maxplus == v4_broadcast);
+            CHECK(v4_maxplus.to_string() == v4_broadcast.to_string());
+            CHECK(v4_maxplus.to_string() == "10.255.255.255"s);
 
             // overflow
             CHECK(not ipv4(255, 255, 255, 255).next_ip().has_value());
 
             // construct to Address type
-            auto v4_max_addr = Address{v4_netmax};
-            CHECK(v4_max_addr.to_string() == "10.255.255.255:0"s);
+            auto v4_max_addr = Address{v4_rangemax};
+            CHECK(v4_max_addr.to_string() == "10.255.255.254:0"s);
 
             constexpr auto max_u16t = std::numeric_limits<uint16_t>::max();
 
+            auto v6_str = "2001:db8::1"s;
+
             // ipv6 type; increment ipv6::lo
-            auto a_v6_base = ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0);
-            auto a_v6_base_from_str = ipv6("2001:db8::"s);
-            auto a_v6_net = a_v6_base / 32;
-            auto a_v6_netmax = a_v6_net.max_ip();
+            auto a_v6_base = ipv6(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1);
+            auto a_v6_base_from_str = ipv6(v6_str);
+            auto a_v6_range = a_v6_base / 32;
+            auto a_v6_net = a_v6_base % 32;
+            auto a_v6_range_from_net = a_v6_net.to_range();
+            auto a_v6_rangemax = a_v6_range.max_ip();
 
             auto a_v6_next = *a_v6_base.next_ip();
-            auto a_v6_maxplus = *a_v6_netmax.next_ip();
+            auto a_v6_maxplus = *a_v6_rangemax.next_ip();
 
-            CHECK(a_v6_base.to_string() == "2001:db8::"s);
             CHECK(a_v6_base == a_v6_base_from_str);
+            CHECK(a_v6_range_from_net == a_v6_range);
+            CHECK(a_v6_base.to_string() == v6_str);
+            CHECK(a_v6_net.to_string() == "{}/32"_format(v6_str));
+            CHECK(a_v6_net.ip.to_string() == v6_str);
+            CHECK(a_v6_range.to_string() == "2001:db8::/32");
+            CHECK(a_v6_range.ip.to_string() == "2001:db8::");
+
             CHECK((a_v6_base.to_string() + "/32") == a_v6_net.to_string());
-            CHECK(a_v6_next.to_string() == "2001:db8::1"s);
-            CHECK(a_v6_netmax.to_string() == "2001:db8:ffff:ffff:ffff:ffff:ffff:ffff"s);
+            CHECK(a_v6_next.to_string() == "2001:db8::2"s);
+            CHECK(a_v6_rangemax.to_string() == "2001:db8:ffff:ffff:ffff:ffff:ffff:ffff"s);
             CHECK(a_v6_maxplus.to_string() == "2001:db9::"s);
 
             // ipv6 type; increment ipv6::hi
             auto b_v6_base = ipv6(0x2001, 0xdb8, 0, 0, max_u16t, max_u16t, max_u16t, max_u16t);
-            auto b_v6_net = b_v6_base / 32;
-            auto b_v6_netmax = b_v6_net.max_ip();
+            auto b_v6_range = b_v6_base / 32;
+            auto b_v6_rangemax = b_v6_range.max_ip();
 
             auto b_v6_next = *b_v6_base.next_ip();
-            auto b_v6_maxplus = *b_v6_netmax.next_ip();
+            auto b_v6_maxplus = *b_v6_rangemax.next_ip();
 
-            CHECK(b_v6_netmax == a_v6_netmax);
+            CHECK(b_v6_rangemax == a_v6_rangemax);
             CHECK(b_v6_base.to_string() == "2001:db8::ffff:ffff:ffff:ffff"s);
-            CHECK(b_v6_netmax.to_string() == a_v6_netmax.to_string());  //  "2001:db8:ffff:ffff:ffff:ffff:ffff:ffff"
+            CHECK(b_v6_rangemax.to_string() == a_v6_rangemax.to_string());  //  "2001:db8:ffff:ffff:ffff:ffff:ffff:ffff"
 
             CHECK(b_v6_maxplus == a_v6_maxplus);
             CHECK(b_v6_next.to_string() == "2001:db8:0:1::"s);
@@ -204,8 +226,8 @@ namespace oxen::quic::test
                               .has_value());
 
             // construct to address type
-            auto a_v6_max_addr = Address{a_v6_netmax};
-            auto b_v6_max_addr = Address{b_v6_netmax};
+            auto a_v6_max_addr = Address{a_v6_rangemax};
+            auto b_v6_max_addr = Address{b_v6_rangemax};
 
             CHECK(a_v6_max_addr.to_string() == "[2001:db8:ffff:ffff:ffff:ffff:ffff:ffff]:0"s);
 
@@ -213,12 +235,12 @@ namespace oxen::quic::test
             CHECK(a_v6_max_addr.to_string() == b_v6_max_addr.to_string());
 
             // ipv6 type; increment ipv6::lo with high mask
-            auto c_v6_net = a_v6_base / 96;
-            auto c_v6_netmax = c_v6_net.max_ip();
-            auto c_v6_maxplus = *c_v6_netmax.next_ip();
+            auto c_v6_range = a_v6_base / 96;
+            auto c_v6_rangemax = c_v6_range.max_ip();
+            auto c_v6_maxplus = *c_v6_rangemax.next_ip();
 
-            CHECK(c_v6_net.to_string() == "2001:db8::/96"s);
-            CHECK(c_v6_netmax.to_string() == "2001:db8::ffff:ffff"s);
+            CHECK(c_v6_range.to_string() == "2001:db8::/96"s);
+            CHECK(c_v6_rangemax.to_string() == "2001:db8::ffff:ffff"s);
             CHECK(c_v6_maxplus.to_string() == "2001:db8::1:0:0"s);
         }
 
