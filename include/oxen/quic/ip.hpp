@@ -169,6 +169,16 @@ namespace oxen::quic
                 auto b = ip.to_base(mask);
 
                 if (mask < 32)
+                    b.addr |= (uint32_t{1} << (32 - mask)) - 2;
+
+                return b;
+            }
+
+            constexpr ipv4 broadcast() const
+            {
+                auto b = ip.to_base(mask);
+
+                if (mask < 32)
                     b.addr |= (uint32_t{1} << (32 - mask)) - 1;
 
                 return b;

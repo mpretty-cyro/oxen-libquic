@@ -151,6 +151,7 @@ namespace oxen::quic::test
             auto v4_range_from_net = v4_net.to_range();
             auto v4_range = v4_base / 8;
             auto v4_rangemax = v4_range.max_ip();
+            auto v4_broadcast = v4_range.broadcast();
 
             auto v4_next = *v4_base.next_ip();
             auto v4_maxplus = *v4_rangemax.next_ip();
@@ -163,15 +164,17 @@ namespace oxen::quic::test
             CHECK(v4_range.to_string() == "10.0.0.0/8");
             CHECK(v4_range.ip.to_string() == "10.0.0.0");
             CHECK(v4_next.to_string() == "10.0.0.2");
-            CHECK(v4_rangemax.to_string() == "10.255.255.255"s);
-            CHECK(v4_maxplus.to_string() == "11.0.0.0"s);
+            CHECK(v4_rangemax.to_string() == "10.255.255.254"s);
+            CHECK(v4_maxplus == v4_broadcast);
+            CHECK(v4_maxplus.to_string() == v4_broadcast.to_string());
+            CHECK(v4_maxplus.to_string() == "10.255.255.255"s);
 
             // overflow
             CHECK(not ipv4(255, 255, 255, 255).next_ip().has_value());
 
             // construct to Address type
             auto v4_max_addr = Address{v4_rangemax};
-            CHECK(v4_max_addr.to_string() == "10.255.255.255:0"s);
+            CHECK(v4_max_addr.to_string() == "10.255.255.254:0"s);
 
             constexpr auto max_u16t = std::numeric_limits<uint16_t>::max();
 
