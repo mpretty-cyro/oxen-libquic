@@ -20,9 +20,14 @@ namespace oxen::quic
         return "{}"_format(buf);
     }
 
-    std::string ipv4_net::to_string() const
+    std::string detail::masked_ipv4::to_string() const
     {
-        return "{}/{}"_format(base.to_string(), mask);
+        return "{}/{}"_format(ip.to_string(), mask);
+    }
+
+    std::string detail::masked_ipv6::to_string() const
+    {
+        return "{}/{}"_format(ip.to_string(), mask);
     }
 
     in6_addr ipv6::to_in6() const
@@ -56,10 +61,5 @@ namespace oxen::quic
         inet_ntop(AF_INET6, &addr, buf, sizeof(buf));
 
         return "{}"_format(buf);
-    }
-
-    const std::string ipv6_net::to_string() const
-    {
-        return "{}/{}"_format(base.to_string(), mask);
     }
 }  //  namespace oxen::quic
